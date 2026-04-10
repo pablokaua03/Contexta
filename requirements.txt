@@ -1,0 +1,3 @@
+# Zero external dependencies — standard library only.
+# Python 3.10+ required.
+# Linux only: sudo apt install python3-tk
