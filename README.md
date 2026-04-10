@@ -20,7 +20,7 @@
 
 <br>
 
-![mdcodebrief screenshot](assets/screenshot.png)
+![mdcodebrief screenshot](assets/assets/screenshot.png)
 
 </div>
 
