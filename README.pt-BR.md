@@ -2,12 +2,12 @@
 
 # ⚡ mdcodebrief
 
-**Escaneia qualquer projeto e gera um único arquivo `.md` com contexto completo de código, pronto para colar em interfaces de IA. Zero dependências, GUI + CLI.**
+**Escaneia qualquer projeto e gera um único arquivo `.md` com contexto completo de código, pronto para colar em interfaces de IA. Zero dependências de runtime, GUI + CLI.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Plataforma](https://img.shields.io/badge/Plataforma-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
-[![Zero Dependências](https://img.shields.io/badge/Dependências-Zero-brightgreen)]()
+[![Zero Dependências de Runtime](https://img.shields.io/badge/Depend%C3%AAncias%20de%20Runtime-Zero-brightgreen)]()
 [![Version](https://img.shields.io/badge/Versão-1.3.0-purple)]()
 
 <br>
@@ -70,7 +70,7 @@ A saída foi projetada para ser **colada diretamente em interfaces de chat de IA
 | 🧪 **33 testes automatizados** | Cobertura de scanner, renderer, gitignore e tokens |
 | 📏 **Limites de segurança** | Arquivos truncados em 1 000 linhas; scan para em 2 000 arquivos |
 | 🌍 **Multiplataforma** | Windows, macOS, Linux |
-| 📦 **Zero dependências** | Apenas biblioteca padrão do Python |
+| 📦 **Zero dependências de runtime** | Apenas a biblioteca padrão do Python é necessária para executar pelo código-fonte |
 
 ---
 
@@ -90,6 +90,8 @@ git clone https://github.com/pablokaua03/mdcodebrief.git
 cd mdcodebrief
 python mdcodebrief.py
 ```
+
+O `mdcodebrief` em si usa apenas a biblioteca padrão do Python. Em algumas distribuições Linux, o `tkinter` é distribuído como pacote de sistema separado, como `python3-tk`.
 
 ### Modo CLI
 
@@ -138,6 +140,8 @@ python mdcodebrief.py /caminho/para/projeto --diff --copy -p "Revise este PR"
 chmod +x build.sh && ./build.sh
 ```
 
+Para gerar o executável standalone, o projeto usa **PyInstaller** como dependência opcional de empacotamento. Ele não é necessário para executar o `mdcodebrief` pelo código-fonte.
+
 ---
 
 ## Rodar os testes
@@ -151,7 +155,7 @@ python -m unittest discover tests/
 ## Segurança
 
 - **Somente leitura** — nunca modifica os arquivos do projeto
-- Sem acesso à rede, sem telemetria, sem dependências externas
+- Sem acesso à rede, sem telemetria e sem dependências externas de runtime
 - Limites rígidos evitam scans infinitos
 
 ---

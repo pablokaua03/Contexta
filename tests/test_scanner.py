@@ -10,6 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+TEST_TMP_ROOT = Path(__file__).parent / ".tmp"
+TEST_TMP_ROOT.mkdir(exist_ok=True)
+
 from scanner import (
     count_files,
     build_tree,
@@ -63,7 +66,8 @@ class TestShouldIgnoreDir(unittest.TestCase):
 class TestReadFileSafe(unittest.TestCase):
     def test_reads_utf8(self):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
-                                         suffix=".txt", delete=False) as f:
+                                         suffix=".txt", delete=False,
+                                         dir=TEST_TMP_ROOT) as f:
             f.write("hello world\n")
             path = Path(f.name)
         content, truncated = read_file_safe(path)
@@ -73,7 +77,8 @@ class TestReadFileSafe(unittest.TestCase):
 
     def test_truncates_long_file(self):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
-                                         suffix=".txt", delete=False) as f:
+                                         suffix=".txt", delete=False,
+                                         dir=TEST_TMP_ROOT) as f:
             for i in range(1100):
                 f.write(f"line {i}\n")
             path = Path(f.name)
@@ -83,7 +88,7 @@ class TestReadFileSafe(unittest.TestCase):
 
     def test_reads_latin1_bytes(self):
         # latin-1 can read any byte sequence — no file is truly unreadable
-        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, dir=TEST_TMP_ROOT) as f:
             f.write(bytes(range(256)))
             path = Path(f.name)
         content, truncated = read_file_safe(path)
@@ -94,7 +99,7 @@ class TestReadFileSafe(unittest.TestCase):
 
 class TestGitignorePatterns(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        self.tmp = Path(tempfile.mkdtemp(dir=TEST_TMP_ROOT))
 
     def tearDown(self):
         import shutil
@@ -140,7 +145,7 @@ class TestGitignorePatterns(unittest.TestCase):
 
 class TestBuildTree(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        self.tmp = Path(tempfile.mkdtemp(dir=TEST_TMP_ROOT))
 
     def tearDown(self):
         import shutil
@@ -169,6 +174,18 @@ class TestBuildTree(unittest.TestCase):
         counter = [0]
         tree = build_tree(self.tmp, False, False, _noop_log, counter, [], self.tmp)
         self.assertEqual(count_files(tree), 2)
+
+    def test_hidden_files_stay_out_by_default(self):
+        (self.tmp / ".env").write_text("SECRET=1", encoding="utf-8")
+        counter = [0]
+        tree = build_tree(self.tmp, False, False, _noop_log, counter, [], self.tmp)
+        self.assertEqual(count_files(tree), 0)
+
+    def test_hidden_files_can_be_included(self):
+        (self.tmp / ".env").write_text("SECRET=1", encoding="utf-8")
+        counter = [0]
+        tree = build_tree(self.tmp, True, False, _noop_log, counter, [], self.tmp)
+        self.assertEqual(count_files(tree), 1)
 
 
 if __name__ == "__main__":

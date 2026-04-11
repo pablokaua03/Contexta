@@ -6,8 +6,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+TEST_TMP_ROOT = Path(__file__).parent / ".tmp"
+TEST_TMP_ROOT.mkdir(exist_ok=True)
 
 from renderer import (
     __version__,
@@ -61,7 +65,7 @@ class TestRenderTreeAscii(unittest.TestCase):
 
 class TestGenerateMarkdown(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        self.tmp = Path(tempfile.mkdtemp(dir=TEST_TMP_ROOT))
 
     def tearDown(self):
         import shutil
@@ -92,6 +96,14 @@ class TestGenerateMarkdown(unittest.TestCase):
 
     def test_empty_project(self):
         md = generate_markdown(self.tmp)
+        self.assertIn("Files: **0**", md)
+
+    @patch("renderer.get_git_changed_files", return_value=[])
+    def test_diff_mode_shows_empty_result_without_full_fallback(self, _mock_changed):
+        (self.tmp / "main.py").write_text("print('hello')", encoding="utf-8")
+        md = generate_markdown(self.tmp, diff_mode=True)
+        self.assertIn("Mode: **Git diff**", md)
+        self.assertIn("No changed files matched the current filters", md)
         self.assertIn("Files: **0**", md)
 
 

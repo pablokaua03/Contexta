@@ -1,10 +1,13 @@
-# mdcodebrief has zero external dependencies.
+# mdcodebrief has zero external runtime dependencies.
 # It runs entirely on the Python standard library.
 #
 # Python 3.10+ is required.
 #
 # On Debian/Ubuntu Linux, tkinter may need to be installed separately:
 #   sudo apt install python3-tk
+#
+# Optional executable builds use PyInstaller, but it is not required
+# to run mdcodebrief from source.
 #
 # To run tests (no extra packages needed):
 #   python -m unittest discover tests/

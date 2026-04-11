@@ -7,25 +7,7 @@ import sys
 from pathlib import Path
 
 from renderer import __version__, generate_markdown
-
-
-def get_desktop() -> Path:
-    import os
-    if sys.platform == "win32":
-        try:
-            import winreg
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
-            )
-            desktop, _ = winreg.QueryValueEx(key, "Desktop")
-            return Path(desktop)
-        except Exception:
-            pass
-    xdg = os.environ.get("XDG_DESKTOP_DIR")
-    if xdg:
-        return Path(xdg)
-    return Path.home() / "Desktop"
+from utils import get_desktop, safe_project_name
 
 
 def copy_to_clipboard(text: str) -> None:
@@ -85,9 +67,7 @@ def run_cli() -> None:
         log_cb=lambda msg, tag="": print(msg),
     )
 
-    safe = "".join(
-        c for c in project_path.name if c.isalnum() or c in " _-"
-    ).strip() or "project"
+    safe = safe_project_name(project_path.name)
     out = Path(args.output) if args.output else (get_desktop() / f"resume - {safe}.md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md, encoding="utf-8")

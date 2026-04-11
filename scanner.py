@@ -161,21 +161,49 @@ def get_git_changed_files(root: Path, staged_only: bool = False) -> list[Path] |
     Returns None if not a git repo or git is unavailable.
     """
     try:
-        cmd = ["git", "diff", "--name-only"]
-        if staged_only:
-            cmd.append("--cached")
-        result = subprocess.run(
-            cmd, cwd=str(root),
-            capture_output=True, text=True, timeout=10,
+        inside_work_tree = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
-        if result.returncode != 0:
+        if inside_work_tree.returncode != 0 or inside_work_tree.stdout.strip() != "true":
             return None
+
+        commands = (
+            [["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"]]
+            if staged_only
+            else [
+                ["git", "diff", "--name-only", "--diff-filter=ACMR"],
+                ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+                ["git", "ls-files", "--others", "--exclude-standard"],
+            ]
+        )
+
+        changed_relpaths: set[str] = set()
+        for cmd in commands:
+            result = subprocess.run(
+                cmd,
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return None
+            changed_relpaths.update(
+                line.strip()
+                for line in result.stdout.splitlines()
+                if line.strip()
+            )
+
         files = []
-        for line in result.stdout.strip().splitlines():
-            p = root / line.strip()
+        for relpath in sorted(changed_relpaths):
+            p = root / relpath
             if p.is_file():
                 files.append(p)
-        return files or None
+        return files
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
@@ -216,10 +244,13 @@ def should_ignore_dir(name: str, include_hidden: bool) -> bool:
 def should_ignore_file(
     path: Path,
     include_unknown: bool,
+    include_hidden: bool = False,
     root: Path | None = None,
     gitignore_patterns: list[str] | None = None,
 ) -> bool:
     name = path.name
+    if not include_hidden and name.startswith("."):
+        return True
     if name in IGNORE_FILES:
         return True
     for suffix in IGNORE_SUFFIXES:
@@ -271,7 +302,13 @@ def build_tree(
                 log_cb, counter, gitignore_patterns, project_root,
             ))
         elif entry.is_file():
-            if should_ignore_file(entry, include_unknown, project_root, gitignore_patterns):
+            if should_ignore_file(
+                entry,
+                include_unknown,
+                include_hidden=include_hidden,
+                root=project_root,
+                gitignore_patterns=gitignore_patterns,
+            ):
                 continue
             counter[0] += 1
             node["files"].append({
@@ -283,23 +320,40 @@ def build_tree(
     return node
 
 
-def build_diff_tree(changed_files: list[Path], root: Path) -> dict:
+def build_diff_tree(
+    changed_files: list[Path],
+    root: Path,
+    include_hidden: bool,
+    include_unknown: bool,
+    gitignore_patterns: list[str],
+) -> dict:
     """Build a minimal tree containing only git-changed files."""
     node: dict = {"name": root.name, "path": root, "dirs": [], "files": []}
 
     for fpath in changed_files:
+        if should_ignore_file(
+            fpath,
+            include_unknown,
+            include_hidden=include_hidden,
+            root=root,
+            gitignore_patterns=gitignore_patterns,
+        ):
+            continue
+
         try:
             parts = fpath.relative_to(root).parts
         except ValueError:
             continue
 
         current = node
+        current_path = root
         for part in parts[:-1]:
+            current_path = current_path / part
             existing = next((d for d in current["dirs"] if d["name"] == part), None)
             if not existing:
                 existing = {
                     "name": part,
-                    "path": fpath.parent,
+                    "path": current_path,
                     "dirs": [], "files": [],
                 }
                 current["dirs"].append(existing)

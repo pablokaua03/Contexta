@@ -2,12 +2,12 @@
 
 # ⚡ mdcodebrief
 
-**Scan any project folder and generate a structured `.md` file with full code context, ready to paste into AI chat interfaces. Zero dependencies, GUI + CLI.**
+**Scan any project folder and generate a structured `.md` file with full code context, ready to paste into AI chat interfaces. Zero runtime dependencies, GUI + CLI.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
-[![Zero Dependencies](https://img.shields.io/badge/Dependencies-Zero-brightgreen)]()
+[![Zero Runtime Dependencies](https://img.shields.io/badge/Runtime%20Dependencies-Zero-brightgreen)]()
 [![Version](https://img.shields.io/badge/Version-1.3.0-purple)]()
 
 <br>
@@ -70,7 +70,7 @@ The output is designed to be **pasted directly into AI chat interfaces** (ChatGP
 | 🧪 **Automated tests** | 33 unit tests covering scanner, renderer, gitignore parsing, and token estimation |
 | 📏 **Safety limits** | Files truncated at 1 000 lines; scan stops at 2 000 files |
 | 🌍 **Cross-platform** | Windows, macOS, Linux |
-| 📦 **Zero dependencies** | Only Python standard library required |
+| 📦 **Zero runtime dependencies** | Only the Python standard library is required to run from source |
 
 ---
 
@@ -90,6 +90,8 @@ git clone https://github.com/pablokaua03/mdcodebrief.git
 cd mdcodebrief
 python mdcodebrief.py
 ```
+
+`mdcodebrief` itself uses only the Python standard library. On some Linux distributions, `tkinter` is provided as a separate system package such as `python3-tk`.
 
 ### CLI mode
 
@@ -138,6 +140,8 @@ python mdcodebrief.py /path/to/project --diff --copy -p "Review this PR"
 chmod +x build.sh && ./build.sh
 ```
 
+Building the standalone executable uses **PyInstaller** as an optional packaging dependency. It is not required to run `mdcodebrief` from source.
+
 ---
 
 ## Run tests
@@ -151,7 +155,7 @@ python -m unittest discover tests/
 ## Security
 
 - **Read-only** — never modifies your project files
-- No network access, no telemetry, no external dependencies
+- No network access, no telemetry, and no external runtime dependencies
 - Hard limits prevent runaway scans
 
 ---

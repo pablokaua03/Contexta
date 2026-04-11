@@ -4,7 +4,8 @@ Thank you for considering a contribution!
 
 ## Ground rules
 
-- The tool must remain **zero-dependency** (standard library only)
+- The tool must remain **zero runtime dependency** for source usage (Python standard library only)
+- Optional packaging tools such as **PyInstaller** must stay out of runtime code paths
 - Python **3.10+** syntax is acceptable
 - Every PR must keep the project runnable with `python mdcodebrief.py`
 

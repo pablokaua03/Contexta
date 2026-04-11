@@ -129,11 +129,17 @@ def generate_markdown(
         log_cb("🔀  Git diff mode — scanning changed files only…", "info")
         changed = get_git_changed_files(project_path, staged_only)
         if changed is None:
-            log_cb("⚠  No git changes found. Falling back to full scan.", "warn")
+            log_cb("⚠  Git diff unavailable here. Falling back to full scan.", "warn")
             diff_mode = False
         else:
             log_cb(f"✅  {len(changed)} changed file(s) found.", "ok")
-            tree = build_diff_tree(changed, project_path)
+            tree = build_diff_tree(
+                changed,
+                project_path,
+                include_hidden,
+                include_unknown,
+                gitignore_patterns,
+            )
 
     if not diff_mode:
         log_cb("🔍  Scanning project…", "info")
@@ -159,6 +165,8 @@ def generate_markdown(
 
     if diff_mode:
         md.append(f"> Mode: **Git diff{'  (staged)' if staged_only else ''}**\n")
+        if n_files == 0:
+            md.append("> Result: **No changed files matched the current filters**\n")
 
     md.append("\n---\n")
     md.append("## 🌳 Directory Tree\n```\n")

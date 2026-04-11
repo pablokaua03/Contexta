@@ -9,7 +9,8 @@ from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 
 from renderer import __version__, generate_markdown
-from theme import C, FL, FM, FS, FB, FBS, FH, FT, ThemeRegistry, darken, reg, toggle_theme, DARK, LIGHT, apply_theme
+from theme import C, FL, FM, FS, FB, FBS, FH, FT, ThemeRegistry, darken, reg, toggle_theme
+from utils import get_desktop, safe_project_name
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +159,7 @@ class Toggle(tk.Frame):
         super().__init__(parent, bg=C[bg_key], cursor="hand2")
         self._var    = variable
         self._bg_key = bg_key
+        self._enabled = True
 
         self._cv = tk.Canvas(self, width=self.W, height=self.H,
                               bg=C[bg_key], highlightthickness=0, cursor="hand2")
@@ -176,7 +178,10 @@ class Toggle(tk.Frame):
     def _draw(self):
         self._cv.delete("all")
         on    = self._var.get()
-        track = C["accent"] if on else C["border2"]
+        if not self._enabled:
+            track = C["border"]
+        else:
+            track = C["accent"] if on else C["border2"]
         r     = self.H // 2
         self._cv.create_oval(0, 0, self.H, self.H, fill=track, outline=track)
         self._cv.create_oval(self.W - self.H, 0, self.W, self.H, fill=track, outline=track)
@@ -190,12 +195,25 @@ class Toggle(tk.Frame):
         bg = C[self._bg_key]
         self.configure(bg=bg)
         self._cv.configure(bg=bg)
-        self._lbl.configure(bg=bg, fg=C["text2"])
+        self._lbl.configure(bg=bg, fg=C["text2"] if self._enabled else C["text3"])
         self._draw()
 
     def _toggle(self, _=None):
+        if not self._enabled:
+            return
         self._var.set(not self._var.get())
         self._draw()
+
+    def configure(self, **kw):
+        if "state" in kw:
+            self._enabled = kw.pop("state") != "disabled"
+            cursor = "hand2" if self._enabled else "arrow"
+            super().configure(cursor=cursor)
+            self._cv.configure(cursor=cursor)
+            self._lbl.configure(cursor=cursor)
+            self._draw()
+        if kw:
+            super().configure(**kw)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -309,35 +327,27 @@ def div(parent):
     reg(f, lambda w: w.configure(bg=C["border"]))
 
 
+def badge(parent, text: str, bg_key: str = "tag_bg", fg_key: str = "tag_fg") -> tk.Frame:
+    frame = tk.Frame(parent, bg=C[bg_key], highlightthickness=1, highlightbackground=C["border"])
+    reg(frame, lambda w: w.configure(bg=C[bg_key], highlightbackground=C["border"]))
+
+    label = tk.Label(frame, text=text, font=FT, bg=C[bg_key], fg=C[fg_key], padx=10, pady=4)
+    label.pack()
+    reg(label, lambda w: w.configure(bg=C[bg_key], fg=C[fg_key]))
+
+    return frame
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # DESKTOP HELPER
 # ─────────────────────────────────────────────────────────────────────────────
-
-def get_desktop() -> Path:
-    import os
-    if sys.platform == "win32":
-        try:
-            import winreg
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
-            )
-            desktop, _ = winreg.QueryValueEx(key, "Desktop")
-            return Path(desktop)
-        except Exception:
-            pass
-    xdg = os.environ.get("XDG_DESKTOP_DIR")
-    if xdg:
-        return Path(xdg)
-    return Path.home() / "Desktop"
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # APP
 # ─────────────────────────────────────────────────────────────────────────────
 
 class App(tk.Tk):
-    W = 720
+    W = 860
 
     def __init__(self):
         super().__init__()
@@ -416,28 +426,30 @@ class App(tk.Tk):
         name_lbl.pack(side="left")
         reg(name_lbl, lambda w: w.configure(bg=C["card"], fg=C["text"]))
 
-        sub_lbl = tk.Label(logo_f,
-                            text="Export any project as a single AI-ready .md context file",
-                            font=FS, bg=C["card"], fg=C["text3"])
+        sub_lbl = tk.Label(
+            logo_f,
+            text="Turn any project into a clean AI-ready Markdown brief with safer defaults.",
+            font=FS,
+            bg=C["card"],
+            fg=C["text2"],
+        )
         sub_lbl.pack(anchor="w", pady=(4, 0))
-        reg(sub_lbl, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+        reg(sub_lbl, lambda w: w.configure(bg=C["card"], fg=C["text2"]))
+
+        meta_row = tk.Frame(logo_f, bg=C["card"])
+        meta_row.pack(anchor="w", pady=(12, 0))
+        reg(meta_row, lambda w: w.configure(bg=C["card"]))
+
+        badge(meta_row, "Read-only").pack(side="left", padx=(0, 8))
+        badge(meta_row, "Zero dependency").pack(side="left", padx=(0, 8))
+        badge(meta_row, "AI-ready export").pack(side="left")
 
         right_f = tk.Frame(hdr_inner, bg=C["card"])
         right_f.pack(side="right", anchor="n")
         reg(right_f, lambda w: w.configure(bg=C["card"]))
 
-        ThemeToggleBtn(right_f, self._toggle_theme).pack(side="right", padx=(8, 0))
-
-        ver_badge = tk.Frame(right_f, bg=C["tag_bg"],
-                              highlightthickness=1,
-                              highlightbackground=C["border"])
-        ver_badge.pack(side="right")
-        reg(ver_badge, lambda w: w.configure(bg=C["tag_bg"],
-                                              highlightbackground=C["border"]))
-        ver_lbl = tk.Label(ver_badge, text=f"v{__version__}",
-                            font=FT, bg=C["tag_bg"], fg=C["tag_fg"])
-        ver_lbl.pack(padx=10, pady=5)
-        reg(ver_lbl, lambda w: w.configure(bg=C["tag_bg"], fg=C["tag_fg"]))
+        ThemeToggleBtn(right_f, self._toggle_theme).pack(side="right", padx=(10, 0))
+        badge(right_f, f"v{__version__}").pack(side="right")
 
         div(self)
 
@@ -445,6 +457,34 @@ class App(tk.Tk):
         body = tk.Frame(self, bg=C["bg"])
         body.pack(fill="both", padx=22, pady=18)
         reg(body, lambda w: w.configure(bg=C["bg"]))
+
+        intro = Card(body, bg_key="card2")
+        intro.pack(fill="x")
+        intro_inner = tk.Frame(intro, bg=C["card2"])
+        intro_inner.pack(fill="x", padx=18, pady=16)
+        reg(intro_inner, lambda w: w.configure(bg=C["card2"]))
+
+        intro_title = tk.Label(
+            intro_inner,
+            text="Build a focused project brief in one pass",
+            font=FL,
+            bg=C["card2"],
+            fg=C["text"],
+        )
+        intro_title.pack(anchor="w")
+        reg(intro_title, lambda w: w.configure(bg=C["card2"], fg=C["text"]))
+
+        intro_copy = tk.Label(
+            intro_inner,
+            text="Pick a folder, choose your scan scope, and generate a Markdown context file that is easier to paste into AI tools.",
+            font=FS,
+            bg=C["card2"],
+            fg=C["text2"],
+        )
+        intro_copy.pack(anchor="w", pady=(5, 0))
+        reg(intro_copy, lambda w: w.configure(bg=C["card2"], fg=C["text2"]))
+
+        sp(body, 16)
 
         # Project Folder
         section(body, "Project Folder").pack(anchor="w")
@@ -459,6 +499,16 @@ class App(tk.Tk):
         self._btn_pick = FlatBtn(row1, "  Browse  ", "violet",
                                   self._pick_folder, font=FBS, padx=18, pady=9)
         self._btn_pick.pack(side="left", padx=(8, 0))
+
+        folder_note = tk.Label(
+            body,
+            text="Hidden files stay out by default, and the generated brief is saved to your Desktop.",
+            font=FT,
+            bg=C["bg"],
+            fg=C["text3"],
+        )
+        folder_note.pack(anchor="w", pady=(8, 0))
+        reg(folder_note, lambda w: w.configure(bg=C["bg"], fg=C["text3"]))
 
         sp(body, 20)
 
@@ -510,11 +560,17 @@ class App(tk.Tk):
         reg(col_a, lambda w: w.configure(bg=C["card"]))
         reg(col_b, lambda w: w.configure(bg=C["card"]))
 
-        Toggle(col_a, "Hidden files",       self._var_hidden,  "card").pack(anchor="w")
-        Toggle(col_a, "Unknown extensions", self._var_unknown, "card").pack(anchor="w")
-        Toggle(col_b, "Git diff mode",      self._var_diff,    "card").pack(anchor="w")
-        Toggle(col_b, "Staged only",        self._var_staged,  "card").pack(anchor="w")
-        Toggle(col_b, "Copy to clipboard",  self._var_copy,    "card").pack(anchor="w")
+        self._toggle_hidden = Toggle(col_a, "Hidden files", self._var_hidden, "card")
+        self._toggle_hidden.pack(anchor="w")
+        self._toggle_unknown = Toggle(col_a, "Unknown extensions", self._var_unknown, "card")
+        self._toggle_unknown.pack(anchor="w")
+        self._toggle_diff = Toggle(col_b, "Git diff mode", self._var_diff, "card")
+        self._toggle_diff.pack(anchor="w")
+        self._toggle_staged = Toggle(col_b, "Staged only", self._var_staged, "card")
+        self._toggle_staged.pack(anchor="w")
+        self._toggle_copy = Toggle(col_b, "Copy to clipboard", self._var_copy, "card")
+        self._toggle_copy.pack(anchor="w")
+        self._var_diff.trace_add("write", lambda *_: self._sync_option_states())
 
         sp(body, 20)
 
@@ -526,12 +582,12 @@ class App(tk.Tk):
 
         self._log = tk.Text(
             log_card, height=7, font=FM,
-            bg=C["card"], fg=C["text"],
+            bg=C["bg2"], fg=C["text"],
             insertbackground=C["accent"],
             relief="flat", bd=10,
             state="disabled", wrap="word", cursor="arrow",
         )
-        reg(self._log, lambda w: w.configure(bg=C["card"], fg=C["text"]))
+        reg(self._log, lambda w: w.configure(bg=C["bg2"], fg=C["text"]))
 
         sb = ttk.Scrollbar(log_card, orient="vertical", command=self._log.yview)
         self._log.configure(yscrollcommand=sb.set)
@@ -556,12 +612,12 @@ class App(tk.Tk):
         bar.pack(fill="x")
         reg(bar, lambda w: w.configure(bg=C["bg"]))
 
-        self._btn_gen = FlatBtn(bar, "  ✨  Generate .md  ", "green",
+        self._btn_gen = FlatBtn(bar, "  Generate .md  ", "green",
                                  self._start, padx=24, pady=11)
         self._btn_gen.configure(state="disabled")
         self._btn_gen.pack(side="left")
 
-        self._btn_clip = FlatBtn(bar, "  📋  Copy  ", "accent_dk",
+        self._btn_clip = FlatBtn(bar, "  Copy Latest  ", "accent_dk",
                                   self._copy_to_clipboard, font=FBS, padx=18, pady=11)
         self._btn_clip.configure(state="disabled")
         self._btn_clip.pack(side="left", padx=(10, 0))
@@ -569,7 +625,16 @@ class App(tk.Tk):
         self._pill = StatusPill(bar)
         self._pill.pack(side="right")
 
+        sp(body, 10)
+        footer = tk.Frame(body, bg=C["bg"])
+        footer.pack(fill="x")
+        reg(footer, lambda w: w.configure(bg=C["bg"]))
+        badge(footer, "Local only").pack(side="left", padx=(0, 8))
+        badge(footer, "No telemetry").pack(side="left", padx=(0, 8))
+        badge(footer, "Safer hidden-file defaults").pack(side="left")
+
         sp(body, 4)
+        self._sync_option_states()
         self.update_idletasks()
         self.geometry(f"{self.W}x{self.winfo_reqheight()}")
 
@@ -584,6 +649,26 @@ class App(tk.Tk):
                               ("err", "red"),  ("info", "accent"),
                               ("muted", "text3")]:
             self._log.tag_config(tag, foreground=C[col_key])
+
+    def _sync_option_states(self):
+        diff_enabled = self._var_diff.get()
+        if not diff_enabled:
+            self._var_staged.set(False)
+        self._toggle_staged.configure(state="normal" if diff_enabled else "disabled")
+
+    def _finish_success(self, md: str, out_file: Path, copy_requested: bool):
+        self._last_md = md
+        if copy_requested:
+            self._do_copy(md)
+            self._log_write("📋  Copied to clipboard!", "ok")
+
+        self._log_write(f"\n✅  Saved: {out_file}", "ok")
+        self._pill.set("Done ✓", "ok")
+        self._btn_clip.configure(state="normal")
+        messagebox.showinfo(
+            "Done 🎉",
+            f"Saved to your Desktop:\n\n{out_file.name}\n\n{out_file}"
+        )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -610,7 +695,7 @@ class App(tk.Tk):
         if self._running or not self._project_path:
             return
         self._running = True
-        self._btn_gen.configure(state="disabled", text="  ⏳  Working…  ")
+        self._btn_gen.configure(state="disabled", text="  Working...  ")
         self._btn_pick.configure(state="disabled")
         self._btn_clip.configure(state="disabled")
         self._log_clear()
@@ -629,25 +714,12 @@ class App(tk.Tk):
                 system_prompt=self._prompt_field.get_value(),
                 log_cb=self._log_write,
             )
-            self._last_md = md
-
             desktop  = get_desktop()
-            safe     = "".join(c for c in self._project_path.name
-                               if c.isalnum() or c in " _-").strip() or "project"
+            safe     = safe_project_name(self._project_path.name)
             out_file = desktop / f"resume - {safe}.md"
             out_file.write_text(md, encoding="utf-8")
 
-            if self._var_copy.get():
-                self._do_copy(md)
-                self._log_write("📋  Copied to clipboard!", "ok")
-
-            self._log_write(f"\n✅  Saved: {out_file}", "ok")
-            self.after(0, lambda: self._pill.set("Done ✓", "ok"))
-            self.after(0, lambda: self._btn_clip.configure(state="normal"))
-            self.after(0, lambda: messagebox.showinfo(
-                "Done 🎉",
-                f"Saved to your Desktop:\n\n{out_file.name}\n\n{out_file}"
-            ))
+            self.after(0, lambda: self._finish_success(md, out_file, self._var_copy.get()))
 
         except Exception as exc:
             self._log_write(f"\n❌  {exc}", "err")
@@ -658,7 +730,7 @@ class App(tk.Tk):
             self._running = False
             self.after(0, self._progress.stop)
             self.after(0, lambda: self._btn_gen.configure(
-                state="normal", text="  ✨  Generate .md  "))
+                state="normal", text="  Generate .md  "))
             self.after(0, lambda: self._btn_pick.configure(state="normal"))
 
     def _copy_to_clipboard(self):
