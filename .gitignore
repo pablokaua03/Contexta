@@ -11,3 +11,4 @@ venv/
 Thumbs.db
 *.swp
 resume - *.md
+*.spec
