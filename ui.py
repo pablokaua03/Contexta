@@ -221,8 +221,25 @@ class ThemeToggleBtn(tk.Canvas):
     def _draw(self, hover: bool):
         self.delete("all")
         self.configure(bg=C["card"])
-        symbol = "sun" if C["mode"] == "dark" else "moon"
-        self.create_text(self.SIZE // 2, self.SIZE // 2, text=symbol, font=FT, fill=C["accent"] if hover else C["text2"])
+        color = C["accent"] if hover else C["text2"]
+        center = self.SIZE // 2
+
+        if C["mode"] == "dark":
+            self.create_oval(center - 4, center - 4, center + 4, center + 4, fill=color, outline=color)
+            for x1, y1, x2, y2 in (
+                (center, 4, center, 7),
+                (center, self.SIZE - 4, center, self.SIZE - 7),
+                (4, center, 7, center),
+                (self.SIZE - 4, center, self.SIZE - 7, center),
+                (7, 7, 9, 9),
+                (self.SIZE - 7, 7, self.SIZE - 9, 9),
+                (7, self.SIZE - 7, 9, self.SIZE - 9),
+                (self.SIZE - 7, self.SIZE - 7, self.SIZE - 9, self.SIZE - 9),
+            ):
+                self.create_line(x1, y1, x2, y2, fill=color, width=1.6, capstyle="round")
+        else:
+            self.create_oval(center - 6, center - 6, center + 6, center + 6, fill=color, outline=color)
+            self.create_oval(center - 2, center - 7, center + 7, center + 5, fill=C["card"], outline=C["card"])
 
 
 class StatusPill(tk.Frame):
