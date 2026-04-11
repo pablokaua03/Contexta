@@ -38,6 +38,20 @@ A saída foi projetada para ser **colada diretamente em interfaces de chat de IA
 
 ---
 
+## Quando usar
+
+| Situação | Como |
+|---|---|
+| **Pedir uma revisão de código para IA** | Rode no projeto completo e cole o `.md` |
+| **Code review / análise de PR** | Use `--diff` para exportar apenas os arquivos alterados |
+| **Onboarding de um novo dev** | Gere um snapshot completo da base de código |
+| **Debugar com ajuda de IA** | Adicione `-p "Encontre o bug no fluxo de autenticação"` |
+| **Refatorar com IA** | Adicione `-p "Refatore isso para TypeScript"` |
+
+> **Quando NÃO usar:** projetos com milhares de arquivos ou assets gerados — use o modo `--diff` ou aponte para uma subpasta específica.
+
+-----
+
 ## Recursos
 
 | Recurso | Detalhe |
