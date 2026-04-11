@@ -1,6 +1,6 @@
 """
 tests/test_scanner.py — Unit tests for scanner.py
-Run with: python -m pytest tests/ or python -m unittest discover tests/
+Run with: python -m unittest discover tests/
 """
 
 import sys
