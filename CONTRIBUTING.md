@@ -18,7 +18,7 @@ Thank you for considering a contribution!
 ## Adding language extensions
 
 ```python
-# # In scanner.py → CODE_EXTENSIONS dict
+# In scanner.py → CODE_EXTENSIONS dict
 ".xyz": "xyz",
 ```
 
