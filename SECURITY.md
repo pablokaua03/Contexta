@@ -12,7 +12,7 @@
 If you discover a security vulnerability, please **do not open a public issue**.
 
 Instead, contact directly via GitHub:
-👉 https://github.com/pablokaua03/mdcodebrief/issues
+👉 https://github.com/pablokaua03/Contexta/issues
 
 Describe the vulnerability, steps to reproduce, and potential impact.
 You can expect a response within 7 days.
