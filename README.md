@@ -12,9 +12,9 @@
 
 <br>
 
-[<img src="https://img.shields.io/badge/Download%20for%20Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="42">](https://github.com/pablokaua03/mdcodebrief/releases/latest/download/contexta.exe)
+[<img src="https://img.shields.io/badge/Download%20for%20Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
 &nbsp;&nbsp;
-[<img src="https://img.shields.io/badge/All%20Releases-333?style=for-the-badge&logo=github&logoColor=white" height="42">](https://github.com/pablokaua03/mdcodebrief/releases/latest)
+[<img src="https://img.shields.io/badge/All%20Releases-333?style=for-the-badge&logo=github&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest)
 
 > No installation needed. Download and run, or launch from source with Python.
 
@@ -121,8 +121,8 @@ Use it when you want to:
 ### Option B: Run from source
 
 ```bash
-git clone https://github.com/pablokaua03/mdcodebrief.git
-cd mdcodebrief
+git clone https://github.com/pablokaua03/Contexta.git
+cd Contexta
 python contexta.py
 ```
 
@@ -164,72 +164,28 @@ python contexta.py /path/to/project --task ai_handoff --compression balanced --f
 ## Prompting tips by AI target
 
 ### Generic LLM
-
-- Usually works well:
-  - define the task clearly
-  - specify the output format you want
-- Usually avoid:
-  - vague goals with no definition of done
-  - asking for many unrelated things at once
-- Rough usage profile:
-  - good default for most workflows
-  - prompt length, output length, and latency vary a lot by provider
+- Usually works well: clear task, explicit output format
+- Usually avoid: vague goals with no definition of done
 
 ### ChatGPT
-
-- Usually works well:
-  - clear task definition
-  - concise but precise instructions
-  - short examples when they help clarify the format
-- Usually avoid:
-  - asking for hidden chain-of-thought
-  - mixing architecture analysis and implementation work without priority
-- Rough usage profile:
-  - responds well to explicit structure
-  - visible output size and reasoning effort can affect latency significantly
+- Usually works well: concise but precise instructions, short examples when helpful
+- Usually avoid: mixing architecture analysis and implementation without priority
 
 ### Claude
-
-- Usually works well:
-  - structured requests
-  - architecture context plus a clearly scoped goal
-  - ranked findings or recommendations
-- Usually avoid:
-  - broad prompts with no prioritization
-  - forcing exhaustive output when a focused answer is better
-- Rough usage profile:
-  - comfortable with richer context
-  - still benefits from a short summary of what matters most
+- Usually works well: structured requests, architecture context plus a scoped goal
+- Usually avoid: broad prompts with no prioritization
 
 ### Gemini
-
-- Usually works well:
-  - broader project context plus explicit priorities
-  - clear formatting instructions
-- Usually avoid:
-  - assuming long context removes the need for prompt structure
-  - mixing unrelated tasks into one export
-- Rough usage profile:
-  - handles large packs well
-  - output quality still depends on task clarity and scope
+- Usually works well: broader context with explicit priorities, clear formatting instructions
+- Usually avoid: assuming long context removes the need for structure
 
 ### Copilot / coding agents
-
-- Usually works well:
-  - explicit files, constraints, and expected final state
-  - implementation-oriented asks with acceptance criteria
-- Usually avoid:
-  - open-ended requests with no target behavior
-  - asking for hidden reasoning instead of a brief rationale
-- Rough usage profile:
-  - strongest for concrete coding tasks
-  - smaller, well-scoped asks usually produce better results
+- Usually works well: explicit files, constraints, and expected final state
+- Usually avoid: open-ended requests with no target behavior
 
 ---
 
 ## Token guidance
-
-Token counts in Contexta are rough estimates. Actual usage depends on the selected files, compression level, visible output, and the model's own runtime behavior.
 
 | Rough size | Heuristic |
 |---|---|
@@ -237,8 +193,6 @@ Token counts in Contexta are rough estimates. Actual usage depends on the select
 | `8k - 32k` | Often comfortable for mainstream model sessions |
 | `32k - 128k` | Better suited to larger-context sessions |
 | `> 128k` | Consider long-context workflows or a tighter export |
-
-Visible output tokens are only part of the experience. Latency can also increase because of reasoning effort, output size, and provider-specific behavior.
 
 ---
 
@@ -253,11 +207,8 @@ chmod +x build.sh && ./build.sh
 ```
 
 Build outputs:
-
 - `dist/contexta.exe`
 - `dist/contexta-safe/contexta-safe.exe`
-
-The `contexta-safe` onedir build is often the better choice when Windows heuristics are aggressive toward onefile executables.
 
 ---
 
