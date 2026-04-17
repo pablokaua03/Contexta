@@ -98,6 +98,10 @@ class TestTokenEstimation(unittest.TestCase):
             section_titles_for_preview("full", "find_dead_code", False)[:4],
             ["Dead Code Lens", "Low-Signal Files", "Weakly Connected Modules", "Possible False Positives"],
         )
+        self.assertEqual(
+            section_titles_for_preview("debug", "risk_analysis", False)[:4],
+            ["Risk Objective", "High-Risk Files", "Potential Regression Signals", "Missing Coverage / Testing Gaps"],
+        )
 
 
 class TestRenderTreeAscii(unittest.TestCase):
@@ -159,12 +163,13 @@ class TestGenerateMarkdown(unittest.TestCase):
         self.assertIn("Files: **0**", md)
 
     @patch("renderer.get_git_changed_files", return_value=[])
-    def test_diff_mode_shows_empty_result_without_full_fallback(self, _mock_changed):
+    def test_diff_mode_falls_back_to_central_context_when_no_changed_files_exist(self, _mock_changed):
         (self.tmp / "main.py").write_text("print('hello')", encoding="utf-8")
         md = generate_markdown(self.tmp, diff_mode=True)
         self.assertIn("Mode: **Git diff**", md)
-        self.assertIn("No changed files matched the current filters", md)
-        self.assertIn("Files: **0**", md)
+        self.assertIn("fell back to central files and nearby tests", md)
+        self.assertIn("Files: **1**", md)
+        self.assertIn("Fallback Context:", md)
 
     def test_context_summary_sections_present(self):
         (self.tmp / "ui.py").write_text("import tkinter as tk\n", encoding="utf-8")
@@ -266,6 +271,36 @@ class TestGenerateMarkdown(unittest.TestCase):
         self.assertIn("entrypoint", md)
         self.assertNotIn("Score breakdown:", md)
 
+    @patch("renderer.get_git_changed_files")
+    def test_onboarding_selection_reasons_do_not_use_diff_language(self, mock_changed):
+        main_file = self.tmp / "contexta.py"
+        ui_file = self.tmp / "ui.py"
+        main_file.write_text("__name__ = '__main__'\nfrom ui import launch\n", encoding="utf-8")
+        ui_file.write_text("import tkinter as tk\n\ndef launch():\n    return tk.Tk()\n", encoding="utf-8")
+        mock_changed.return_value = [ui_file]
+        md = generate_markdown(self.tmp, context_mode="onboarding", task_profile="explain_project", compression="balanced")
+        self.assertNotIn("current diff", md)
+        self.assertNotIn("changed surface", md)
+        self.assertIn("part of the current working context", md)
+        self.assertNotIn("current workspace file", md)
+        self.assertNotIn("nearby workspace context", md)
+
+    def test_onboarding_where_to_change_surfaces_localization_targets(self):
+        app_dir = self.tmp / "app"
+        lib_dir = self.tmp / "lib"
+        components_dir = self.tmp / "components"
+        app_dir.mkdir(exist_ok=True)
+        lib_dir.mkdir(exist_ok=True)
+        components_dir.mkdir(exist_ok=True)
+        (self.tmp / "package.json").write_text('{"dependencies":{"next":"15.0.0","react":"19.0.0"}}', encoding="utf-8")
+        (app_dir / "page.tsx").write_text("export default function Page() { return <main />; }\n", encoding="utf-8")
+        (lib_dir / "LocaleContext.tsx").write_text("const LocaleContext = createContext(undefined);\n", encoding="utf-8")
+        (lib_dir / "translations.ts").write_text("export const translations = {};\n", encoding="utf-8")
+        (components_dir / "LocaleToggle.tsx").write_text("export function LocaleToggle() { return <button />; }\n", encoding="utf-8")
+        md = generate_markdown(self.tmp, context_mode="onboarding", task_profile="explain_project")
+        self.assertIn("Localization changes ->", md)
+        self.assertIn("lib/LocaleContext.tsx", md)
+
     def test_full_context_keeps_important_files_first(self):
         (self.tmp / "contexta.py").write_text("__name__ = '__main__'\n", encoding="utf-8")
         (self.tmp / "helper.py").write_text("x = 1\n", encoding="utf-8")
@@ -318,6 +353,37 @@ class TestGenerateMarkdown(unittest.TestCase):
         self.assertIn("## Testing Lens", md)
         self.assertIn("## Core Modules Worth Testing", md)
         self.assertIn("## Missing Coverage / Gaps", md)
+
+    def test_risk_analysis_mode_surfaces_risk_sections(self):
+        (self.tmp / "app").mkdir(exist_ok=True)
+        (self.tmp / "app" / "page.tsx").write_text(
+            "\n".join(
+                ["export default function Page() {", "  return <form onSubmit={handleSubmit}>Hi</form>;", "}"]
+                + [f"const line_{i} = {i}" for i in range(650)]
+            ),
+            encoding="utf-8",
+        )
+        (self.tmp / "lib").mkdir(exist_ok=True)
+        (self.tmp / "lib" / "LocaleContext.tsx").write_text(
+            "export const LocaleContext = createContext(undefined)\nexport function useLocale() { return LocaleContext }\n",
+            encoding="utf-8",
+        )
+        md = generate_markdown(self.tmp, context_mode="debug", task_profile="risk_analysis", compression="focused")
+        self.assertIn("## Risk Objective", md)
+        self.assertIn("## High-Risk Files", md)
+        self.assertIn("## Potential Regression Signals", md)
+        self.assertIn("## Missing Coverage / Testing Gaps", md)
+        self.assertIn("## Shared Dependencies / Broad Impact Areas", md)
+        self.assertIn("## Weak Spots / Maintenance Risks", md)
+
+    def test_risk_analysis_uses_specific_engine_risk_language(self):
+        (self.tmp / "context_engine.py").write_text("def build_analysis():\n    return None\n", encoding="utf-8")
+        (self.tmp / "renderer.py").write_text("def generate_markdown():\n    return ''\n", encoding="utf-8")
+        md = generate_markdown(self.tmp, context_mode="debug", task_profile="risk_analysis", compression="focused")
+        self.assertIn("context selection", md)
+        self.assertIn("output structure and presentation", md)
+        self.assertNotIn("context_engine.py` handles input or submission flow", md)
+        self.assertNotIn("renderer.py` handles input or submission flow", md)
 
     def test_dead_code_mode_surfaces_verification_sections(self):
         (self.tmp / "utils.py").write_text("def helper():\n    return True\n", encoding="utf-8")

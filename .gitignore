@@ -5,6 +5,8 @@ dist/
 build/
 venv/
 .venv/
+.venv-linux/
+.venvs/
 .pytest_cache/
 .mypy_cache/
 .DS_Store

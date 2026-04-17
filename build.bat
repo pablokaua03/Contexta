@@ -1,9 +1,13 @@
 @echo off
+setlocal
 echo.
 echo  =========================================
 echo   Contexta - Build Executable
 echo  =========================================
 echo.
+
+set "SPEC_FILE=contexta-onefile.spec"
+set "OUTPUT_EXE=dist\contexta.exe"
 
 py --version >nul 2>&1
 if errorlevel 1 (
@@ -12,8 +16,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo  Installing PyInstaller...
-py -m pip install --upgrade pyinstaller
+py -m pip show pyinstaller >nul 2>&1
+if errorlevel 1 (
+    echo  Installing PyInstaller...
+    py -m pip install pyinstaller
+)
 if errorlevel 1 (
     echo  [ERROR] Failed to install PyInstaller.
     pause
@@ -25,15 +32,21 @@ echo  Building executable...
 echo.
 
 if exist "dist\contexta.exe" del /f /q "dist\contexta.exe"
-if exist "dist\contexta" rd /s /q "dist\contexta"
-if exist "build" rd /s /q "build"
-set VERSION_ARGS=
-if exist "version_info.txt" set VERSION_ARGS=--version-file=version_info.txt
-if exist "icon.ico" (
-    py -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --exclude-module brand_assets --icon=icon.ico --add-data "icon.ico;." %VERSION_ARGS% --name=contexta contexta.py
-) else (
-    py -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --exclude-module brand_assets %VERSION_ARGS% --name=contexta contexta.py
+if exist "dist\contexta" (
+    if exist "dist\contexta\" (
+        rd /s /q "dist\contexta"
+    ) else (
+        del /f /q "dist\contexta"
+    )
 )
+if exist "build" rd /s /q "build"
+if not exist "%SPEC_FILE%" (
+    echo  [ERROR] Missing %SPEC_FILE%.
+    pause
+    exit /b 1
+)
+
+py -m PyInstaller --noconfirm --clean "%SPEC_FILE%"
 
 if errorlevel 1 goto :build_error
 
@@ -46,9 +59,9 @@ if not exist "%CONTEXTA_SIGN_PFX%" goto :signing_skipped
 echo.
 echo  Signing executable...
 if "%CONTEXTA_SIGN_PASSWORD%"=="" (
-    signtool sign /fd SHA256 /f "%CONTEXTA_SIGN_PFX%" /tr http://timestamp.digicert.com /td SHA256 "dist\contexta.exe"
+    signtool sign /fd SHA256 /f "%CONTEXTA_SIGN_PFX%" /tr http://timestamp.digicert.com /td SHA256 "%OUTPUT_EXE%"
 ) else (
-    signtool sign /fd SHA256 /f "%CONTEXTA_SIGN_PFX%" /p "%CONTEXTA_SIGN_PASSWORD%" /tr http://timestamp.digicert.com /td SHA256 "dist\contexta.exe"
+    signtool sign /fd SHA256 /f "%CONTEXTA_SIGN_PFX%" /p "%CONTEXTA_SIGN_PASSWORD%" /tr http://timestamp.digicert.com /td SHA256 "%OUTPUT_EXE%"
 )
 if errorlevel 1 goto :build_error
 
@@ -57,7 +70,7 @@ if errorlevel 1 goto :build_error
 echo.
 echo  =========================================
 echo   Done! Outputs:
-echo     - dist\contexta.exe
+echo     - %OUTPUT_EXE%
 echo  =========================================
 echo.
 

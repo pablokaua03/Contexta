@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
 [![Zero Runtime Dependencies](https://img.shields.io/badge/Runtime%20Dependencies-Zero-brightgreen)]()
-[![Version](https://img.shields.io/badge/Version-1.4.0-purple)]()
+[![Version](https://img.shields.io/badge/Version-1.5.0-purple)]()
 
 <br>
 
@@ -73,7 +73,7 @@ Use it when you want to:
 | Selection reasons | Explains why each file was included in the payload |
 | Read This First + Main Flow | Makes the pack easier for humans and models to navigate |
 | Token guidance | Adds rough token estimates for planning, not exact promises |
-| PyInstaller builds | Ships `contexta.exe` and `contexta-safe` build outputs |
+| PyInstaller builds | Ships a native executable for the current platform via `build.bat` or `build.sh` |
 
 ---
 
@@ -116,7 +116,7 @@ Use it when you want to:
 4. Choose a pack, mode, task, and compression level
 5. Create the pack and paste the Markdown into your AI tool
 
-> Windows SmartScreen can warn on unsigned open-source executables. If that happens, the `dist/contexta-safe/` onedir build is usually less troublesome.
+> Windows SmartScreen can warn on unsigned open-source executables.
 
 ### Option B: Run from source
 
@@ -206,9 +206,15 @@ python contexta.py /path/to/project --task ai_handoff --compression balanced --f
 chmod +x build.sh && ./build.sh
 ```
 
+Important:
+- Build the Windows executable on Windows and the Linux executable on Linux. PyInstaller is not a reliable Windows-to-Linux cross-compiler.
+- On Debian/Ubuntu, install `python3-tk` before building.
+
 Build outputs:
-- `dist/contexta.exe`
-- `dist/contexta-safe/contexta-safe.exe`
+- Windows: `dist/contexta.exe`
+- Linux / macOS: `dist/contexta`
+
+If you want the Linux binary without setting up Linux locally, run the GitHub Actions workflow `.github/workflows/build-linux.yml` and download the `contexta-linux` artifact.
 
 ---
 

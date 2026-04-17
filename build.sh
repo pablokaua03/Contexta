@@ -1,35 +1,62 @@
 #!/usr/bin/env bash
 set -e
+
+PYTHON_BIN="${PYTHON_BIN:-}"
+
+if [ -z "$PYTHON_BIN" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        PYTHON_BIN="python3"
+    elif command -v python >/dev/null 2>&1; then
+        PYTHON_BIN="python"
+    else
+        echo " [ERROR] Python 3 not found."
+        exit 1
+    fi
+fi
+
+PLATFORM="$(uname -s)"
+OUTPUT_PATH="dist/contexta"
+
 echo ""
 echo " ========================================="
 echo "  Contexta - Build Executable"
 echo " ========================================="
 echo ""
 
-if ! pip show pyinstaller &>/dev/null; then
+if ! "$PYTHON_BIN" -m pip show pyinstaller >/dev/null 2>&1; then
     echo " Installing PyInstaller..."
-    pip install pyinstaller
+    "$PYTHON_BIN" -m pip install pyinstaller
+fi
+
+if ! "$PYTHON_BIN" -c "import tkinter" >/dev/null 2>&1; then
+    echo " [ERROR] tkinter is not available for $PYTHON_BIN."
+    echo "         On Debian/Ubuntu, try: sudo apt install python3-tk"
+    exit 1
 fi
 
 echo " Building..."
 echo ""
 
 rm -rf build
-rm -rf dist/contexta
-rm -f dist/contexta.exe dist/contexta-onefile.exe dist/contexta.zip
+rm -f dist/contexta dist/contexta.exe dist/contexta-onefile.exe
+rm -rf dist/contexta-safe
 
-VERSION_ARGS=()
-if [ -f "version_info.txt" ]; then
-    VERSION_ARGS+=(--version-file=version_info.txt)
+if [ ! -f "contexta.spec" ]; then
+    echo " Missing contexta.spec"
+    exit 1
 fi
 
-if [ -f "icon.ico" ]; then
-    pyinstaller --noconfirm --clean --onefile --windowed --exclude-module brand_assets --icon=icon.ico --add-data "icon.ico:." "${VERSION_ARGS[@]}" --name=contexta contexta.py
+"$PYTHON_BIN" -m PyInstaller --noconfirm --clean contexta.spec
+
+if [ "$PLATFORM" = "Linux" ]; then
+    OUTPUT_PATH="dist/contexta"
+elif [ "$PLATFORM" = "Darwin" ]; then
+    OUTPUT_PATH="dist/contexta"
 else
-    pyinstaller --noconfirm --clean --onefile --windowed --exclude-module brand_assets "${VERSION_ARGS[@]}" --name=contexta contexta.py
+    OUTPUT_PATH="dist/contexta.exe"
 fi
 
 echo ""
 echo " Done!"
-echo "  - dist/contexta.exe"
+echo "  - $OUTPUT_PATH"
 echo ""

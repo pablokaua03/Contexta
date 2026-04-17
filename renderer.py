@@ -23,7 +23,7 @@ from context_engine import (
 )
 from scanner import build_diff_tree, build_tree, count_files, get_git_changed_files, load_gitignore_patterns
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 
 def estimate_tokens(text: str) -> int:
@@ -83,13 +83,135 @@ def refine_onboarding_excerpt_reason(reason: str, item) -> str:
     return "Guided onboarding excerpt showing the opening structure you would read first."
 
 
+def join_reason_phrases(parts: list[str]) -> str:
+    if not parts:
+        return "selected by pack heuristics"
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return f"{', '.join(parts[:-1])}, and {parts[-1]}"
+
+
+def show_verbose_selection_reasons(config: ExportConfig | None) -> bool:
+    if config is None:
+        return False
+    if config.context_mode in {"debug", "refactor", "diff"}:
+        return True
+    return config.task_profile in {"code_review", "pr_summary", "bug_report", "refactor_request"}
+
+
+def normalize_selection_reasons_for_display(reasons: list[str], config: ExportConfig | None) -> list[str]:
+    if not reasons:
+        return []
+    unique = list(dict.fromkeys(reasons))
+    diff_specific = {
+        "changed file",
+        "related to changed files",
+        "diff fallback central file",
+        "diff fallback nearby context",
+        "diff fallback related test",
+        "diff fallback supporting context",
+    }
+    if config and config.context_mode != "diff" and config.task_profile not in {"code_review", "pr_summary", "bug_report"}:
+        non_diff = [reason for reason in unique if reason not in diff_specific]
+        if non_diff:
+            unique = non_diff
+        else:
+            neutral_map = {
+                "changed file": "part of the current working context",
+                "related to changed files": "adjacent to the current working context",
+                "diff fallback central file": "central file",
+                "diff fallback nearby context": "nearby context",
+                "diff fallback related test": "nearby test coverage",
+                "diff fallback supporting context": "supporting context",
+            }
+            unique = [neutral_map.get(reason, reason) for reason in unique]
+    if not show_verbose_selection_reasons(config):
+        unique = unique[:2]
+    return unique
+
+
+def humanize_selection_reason(reason: str, config: ExportConfig | None = None) -> str:
+    compact = {
+        "entrypoint": "entrypoint",
+        "changed file": "changed file",
+        "matched focus": "focus match",
+        "related test": "nearby test coverage",
+        "documentation": "documentation",
+        "central dependency": "shared dependency",
+        "related to changed files": "nearby impact",
+        "onboarding mode picked central file": "onboarding central file",
+        "supports the focused area": "focused area support",
+        "high-leverage refactor candidate": "refactor hotspot",
+        "debug context support": "likely failure path",
+        "full context keeps the complete project payload": "full payload",
+        "selected test coverage": "test coverage",
+        "high score": "high score",
+        "diff fallback central file": "fallback central file",
+        "diff fallback nearby context": "fallback nearby context",
+        "diff fallback related test": "fallback related test",
+        "diff fallback supporting context": "fallback supporting context",
+        "current workspace file": "part of the current working context",
+        "nearby workspace context": "adjacent to the current working context",
+        "part of the current working context": "part of the current working context",
+        "adjacent to the current working context": "adjacent to the current working context",
+        "central file": "central file",
+        "nearby context": "nearby context",
+        "supporting context": "supporting context",
+        "risk hotspot": "risk hotspot",
+        "broad impact area": "broad impact area",
+        "risk verification path": "risk verification path",
+        "maintenance weak spot": "maintenance weak spot",
+    }
+    verbose = {
+        "entrypoint": "it starts an execution path into the app",
+        "changed file": "it is a changed file in the current diff",
+        "matched focus": "it matches the requested focus area",
+        "related test": "it exercises nearby behavior or changed paths",
+        "documentation": "it explains setup, usage, or project intent",
+        "central dependency": "it is a shared dependency for multiple selected files",
+        "related to changed files": "it sits next to the changed surface and may be impacted",
+        "onboarding mode picked central file": "onboarding mode picked it as a central file to read early",
+        "supports the focused area": "it supports the focused area",
+        "high-leverage refactor candidate": "it is a high-leverage refactor candidate",
+        "debug context support": "it helps trace the likely failure path",
+        "full context keeps the complete project payload": "full context keeps it in the exported project payload",
+        "selected test coverage": "it provides nearby test coverage",
+        "high score": "its score was high relative to the rest of the project",
+        "diff fallback central file": "diff fallback picked it as a central file after no valid changed files were detected",
+        "diff fallback nearby context": "diff fallback pulled it in as nearby context after no valid changed files were detected",
+        "diff fallback related test": "diff fallback kept it as nearby test coverage after no valid changed files were detected",
+        "diff fallback supporting context": "diff fallback kept it as supporting context after no valid changed files were detected",
+        "current workspace file": "it is part of the current working context",
+        "nearby workspace context": "it is adjacent to the current working context",
+        "part of the current working context": "it is part of the current working context",
+        "adjacent to the current working context": "it is adjacent to the current working context",
+        "central file": "it is central to the current architecture",
+        "nearby context": "it is closely related to the current architecture",
+        "supporting context": "it adds supporting context for the current architecture",
+        "risk hotspot": "it stands out as a likely risk hotspot",
+        "broad impact area": "it has broad downstream impact across the selected context",
+        "risk verification path": "it looks like a nearby verification path for risky behavior",
+        "maintenance weak spot": "it looks like a maintenance weak spot worth reviewing carefully",
+    }
+    mapping = verbose if show_verbose_selection_reasons(config) else compact
+    return mapping.get(reason, reason)
+
+
+def render_selection_reasons(reasons: list[str], config: ExportConfig | None = None) -> str:
+    display_reasons = normalize_selection_reasons_for_display(reasons, config)
+    humanized = [humanize_selection_reason(reason, config) for reason in display_reasons]
+    return join_reason_phrases(humanized) if humanized else "selected by pack heuristics"
+
+
 def render_file_section(item, config: ExportConfig, include_score_details: bool = False) -> str:
     rel = item.relpath.as_posix()
     tags = ", ".join(sorted(item.tags)) if item.tags else "general"
     size_label = f"{item.line_count} lines"
     if item.truncated:
         size_label = f"{item.line_count} total lines ({item.rendered_line_count} exported)"
-    reason_label = ", ".join(item.selection_reasons) if getattr(item, "selection_reasons", None) else "selected by pack heuristics"
+    reason_label = render_selection_reasons(getattr(item, "selection_reasons", []), config)
     parts = [
         f"### 📄 `{rel}`",
         f"- Role: {item.summary}",
@@ -187,6 +309,18 @@ def rank_primary_files(analysis) -> list:
                 item.relpath.as_posix(),
             ),
         )
+    if task == "risk_analysis":
+        return sorted(
+            candidates,
+            key=lambda item: (
+                item.path.name.lower() in {"build.bat", "build.sh", "version_info.txt"} and item.path.resolve() not in analysis.changed_paths,
+                item.path.resolve() not in analysis.changed_paths,
+                -item.risk_score,
+                -item.dependents,
+                -item.score,
+                item.relpath.as_posix(),
+            ),
+        )
     if task == "write_tests":
         return sorted(
             candidates,
@@ -274,6 +408,17 @@ def ordered_payload_files(analysis, core_files: list, supporting_files: list, re
     ordered_groups: list[list] = []
     if analysis.config.context_mode == "onboarding":
         ordered_groups = [core_files, docs_included, supporting_files, related_tests]
+    elif analysis.config.task_profile == "risk_analysis":
+        high_risk = sorted(
+            [item for item in analysis.selected_files if "test" not in item.tags and "docs" not in item.tags],
+            key=lambda item: (
+                item.path.resolve() not in analysis.changed_paths,
+                -item.risk_score,
+                -item.score,
+                item.relpath.as_posix(),
+            ),
+        )
+        ordered_groups = [high_risk, related_tests, supporting_files, docs_included]
     elif analysis.config.task_profile in {"code_review", "pr_summary"} and analysis.config.context_mode == "diff":
         changed = [item for item in analysis.selected_files if item.path.resolve() in analysis.changed_paths]
         related_changed = [
@@ -419,6 +564,93 @@ def build_score_breakdown(analysis) -> list[str]:
     return lines
 
 
+def build_high_risk_files(analysis) -> list[str]:
+    lines: list[str] = []
+    ranked = [
+        item for item in rank_primary_files(analysis)
+        if "test" not in item.tags and "docs" not in item.tags
+    ]
+    for item in ranked[:6]:
+        descriptor = item.summary.rstrip(".")
+        risk_hint = ", ".join(item.risk_reasons[:2]) if item.risk_reasons else "broad-impact module"
+        lines.append(f"`{item.relpath.as_posix()}` — {descriptor}; risk surface: {risk_hint}.")
+    return lines
+
+
+def build_shared_impact_areas(analysis) -> list[str]:
+    lines: list[str] = []
+    ranked = sorted(
+        [item for item in analysis.selected_files if "test" not in item.tags and "docs" not in item.tags],
+        key=lambda item: (-item.dependents, -item.risk_score, item.relpath.as_posix()),
+    )
+    for item in ranked:
+        if item.dependents >= 2:
+            lines.append(
+                f"`{item.relpath.as_posix()}` is shared by {item.dependents} selected file(s) and may carry broad downstream impact if changed."
+            )
+        elif any(flag in item.risk_flags for flag in ("shared_state", "shared_impact")):
+            lines.append(
+                f"`{item.relpath.as_posix()}` appears to sit on a shared behavior path and may affect multiple flows if it regresses."
+            )
+        if len(lines) >= 5:
+            break
+    return lines
+
+
+def build_maintenance_risks(analysis) -> list[str]:
+    lines: list[str] = []
+    ranked = sorted(
+        [item for item in analysis.selected_files if "test" not in item.tags and "docs" not in item.tags],
+        key=lambda item: (-item.risk_score, -item.line_count, item.relpath.as_posix()),
+    )
+    for item in ranked:
+        if item.path.name.lower() == "context_engine.py":
+            lines.append(f"`{item.relpath.as_posix()}` concentrates scoring, selection, and project analysis logic, so regressions here may affect multiple pack types and outputs.")
+        elif item.path.name.lower() == "renderer.py":
+            lines.append(f"`{item.relpath.as_posix()}` shapes the final pack structure and presentation, so regressions here can affect readability and downstream AI handoff quality.")
+        elif "mixed_concerns" in item.risk_flags:
+            lines.append(f"`{item.relpath.as_posix()}` appears to mix responsibilities, which may make safe review and maintenance harder.")
+        elif "embedded_asset" in item.risk_flags:
+            lines.append(f"`{item.relpath.as_posix()}` embeds asset payloads inline, which can make packaging or review changes harder to reason about safely.")
+        elif "input_flow" in item.risk_flags:
+            lines.append(f"`{item.relpath.as_posix()}` handles input or submission flow and should be checked for validation, failure handling, and persistence side effects.")
+        elif "size" in item.risk_flags and item.line_count >= 600:
+            lines.append(f"`{item.relpath.as_posix()}` is large enough that it may be accumulating multiple responsibilities or change paths.")
+        if len(lines) >= 5:
+            break
+    return lines
+
+
+def build_risk_regression_signals(analysis) -> list[str]:
+    lines: list[str] = []
+    ranked = [
+        item for item in rank_primary_files(analysis)
+        if "test" not in item.tags and "docs" not in item.tags
+    ]
+    for item in ranked[:6]:
+        reasons = item.risk_reasons
+        if not reasons:
+            continue
+        if item.path.name.lower() == "context_engine.py":
+            lines.append(f"`{item.relpath.as_posix()}` concentrates scoring, relationships, and context selection, so changes may affect multiple pack types and exported outputs.")
+        elif item.path.name.lower() == "renderer.py":
+            lines.append(f"`{item.relpath.as_posix()}` shapes final output structure and presentation, so regressions here may affect pack readability and downstream AI handoff quality.")
+        elif "shared dependency" in reasons or "used by multiple selected files" in reasons:
+            lines.append(f"`{item.relpath.as_posix()}` is shared across multiple selected files and may cause broader regressions if it changes.")
+        elif "input or submission flow" in reasons:
+            lines.append(f"`{item.relpath.as_posix()}` appears to sit on an input or submission path and should be reviewed for validation and failure handling.")
+        elif "mixed responsibilities" in reasons:
+            lines.append(f"`{item.relpath.as_posix()}` appears large or mixed enough to hide more than one responsibility, which can make regressions harder to isolate.")
+        elif "no obvious nearby test coverage" in reasons:
+            lines.append(f"`{item.relpath.as_posix()}` looks important to the selected surface without obvious nearby tests, so behavior changes may be harder to verify.")
+        elif "shared app-wide behavior" in reasons:
+            lines.append(f"`{item.relpath.as_posix()}` appears to affect shared app-wide behavior and may have downstream impact beyond its local surface.")
+        else:
+            lines.append(f"`{item.relpath.as_posix()}` stands out as a likely risk surface because it is {reasons[0]}.")
+    lines.extend(analysis.risks)
+    return list(dict.fromkeys(lines))[:7]
+
+
 def build_changed_context(analysis) -> tuple[list[str], list[str], list[str]]:
     changed_selected = [item for item in analysis.selected_files if item.path.resolve() in analysis.changed_paths]
     related_files = [
@@ -466,6 +698,11 @@ def build_task_lens(analysis) -> list[str]:
             "Lead with correctness risks, regressions, missing tests, and brittle heuristics.",
             "Use selection reasons and score breakdowns to audit whether the pack is centered on the right modules.",
         ]
+    if task == "risk_analysis":
+        return [
+            "Treat each highlighted area as a likely risk hint, not a confirmed defect.",
+            "Prioritize modules with broad impact, missing coverage, mixed responsibilities, and user-facing flows with regression potential.",
+        ]
     if task == "refactor_request":
         return [
             "Look for high-dependency modules, large files, and places where tests already give you a safe seam.",
@@ -511,6 +748,12 @@ def build_suggested_prompts(analysis, project_name: str) -> list[str]:
         f"Identify the most bug-prone or regression-prone areas in {project_name}, with attention to the highlighted risks and selected core files.",
         f"Suggest a safe refactor or implementation plan for the central modules in {project_name}, using the relationship map and selection reasons.",
     ]
+    if analysis.config.task_profile == "risk_analysis":
+        prompts = [
+            f"Identify the most likely regression areas in {project_name} based on the selected risk-focused files.",
+            f"Review the selected files in {project_name} for maintainability risks, shared dependencies, and missing coverage.",
+            f"Suggest safe refactors for the highest-risk modules in {project_name} without changing behavior.",
+        ]
     if analysis.config.task_profile == "write_tests":
         prompts[1] = f"Suggest the next best tests to add in {project_name}, focusing on central modules, edge cases, and missing direct coverage."
     if analysis.config.task_profile == "bug_report":
@@ -614,6 +857,162 @@ def build_verification_checklist(analysis) -> list[str]:
     ]
 
 
+def build_read_this_first(analysis) -> list[str]:
+    ordered: list = []
+    seen: set[str] = set()
+
+    def push(item):
+        rel = item.relpath.as_posix()
+        if rel not in seen:
+            ordered.append(item)
+            seen.add(rel)
+
+    for item in analysis.entrypoints[:1]:
+        push(item)
+
+    for tag in ("ui", "cli"):
+        for item in analysis.selected_files:
+            if tag in item.tags:
+                push(item)
+
+    for stem in ("renderer", "context_engine", "scanner"):
+        for item in analysis.selected_files:
+            if item.path.stem == stem:
+                push(item)
+
+    for item in analysis.selected_files:
+        if "test" in item.tags:
+            push(item)
+            break
+
+    lines: list[str] = []
+    for index, item in enumerate(ordered[:6], start=1):
+        reason = render_selection_reasons(item.selection_reasons[:1], analysis.config)
+        lines.append(f"{index}. `{item.relpath.as_posix()}` — {item.summary} Selected because {reason}.")
+    return lines
+
+
+def build_where_to_change(analysis) -> list[str]:
+    by_stem = {item.path.stem: item for item in analysis.selected_files}
+    by_tag: dict[str, list] = {}
+    for item in analysis.selected_files:
+        for tag in item.tags:
+            by_tag.setdefault(tag, []).append(item)
+
+    def pick_matches(predicate, limit: int = 3) -> list:
+        ranked = sorted(analysis.selected_files, key=lambda item: (-item.score, item.relpath.as_posix()))
+        return [item for item in ranked if predicate(item)][:limit]
+
+    def render_targets(items: list) -> str:
+        return ", ".join(f"`{item.relpath.as_posix()}`" for item in items)
+
+    lines: list[str] = []
+    if analysis.fingerprint.project_type == "Frontend web application":
+        auth_targets = pick_matches(
+            lambda item: "authcontext" in item.path.stem.lower()
+            or "/auth/" in item.relpath.as_posix().lower()
+            or "firebase/auth" in item.content.lower()
+        )
+        if auth_targets:
+            lines.append(f"Auth changes -> {render_targets(auth_targets)}")
+
+        locale_targets = pick_matches(
+            lambda item: any(
+                token in item.relpath.as_posix().lower() or token in item.path.stem.lower()
+                for token in ("localecontext", "translations", "locale", "i18n", "locales", "toggle")
+            )
+        )
+        if locale_targets:
+            lines.append(f"Localization changes -> {render_targets(locale_targets)}")
+
+        page_targets = pick_matches(
+            lambda item: item.relpath.as_posix().lower().endswith(("/page.tsx", "/page.jsx", "/layout.tsx", "/layout.jsx"))
+        )
+        if page_targets:
+            lines.append(f"Route and page changes -> {render_targets(page_targets)}")
+
+        shared_ui_targets = pick_matches(
+            lambda item: any(token in item.path.stem.lower() for token in ("navbar", "footer", "layout", "hero"))
+        )
+        if shared_ui_targets:
+            lines.append(f"Shared layout/navigation changes -> {render_targets(shared_ui_targets)}")
+
+    if analysis.fingerprint.project_type == "PHP CRUD web application":
+        form_targets = pick_matches(lambda item: "form" in item.path.stem.lower() or "<form" in item.content.lower())
+        if form_targets:
+            lines.append(f"Form flow changes -> {render_targets(form_targets)}")
+        service_targets = pick_matches(lambda item: "service" in item.path.stem.lower())
+        if service_targets:
+            lines.append(f"Business rule changes -> {render_targets(service_targets)}")
+        dao_targets = pick_matches(lambda item: any(token in item.path.stem.lower() for token in ("dao", "repository")))
+        if dao_targets:
+            lines.append(f"Persistence changes -> {render_targets(dao_targets)}")
+
+    if "ui" in by_tag or "theme" in by_tag or "ui" in by_stem or "theme" in by_stem:
+        ui_targets = [name for name in ("ui", "theme") if name in by_stem]
+        if ui_targets:
+            lines.append(f"UI changes -> {', '.join(f'`{by_stem[name].relpath.as_posix()}`' for name in ui_targets)}")
+    if "context_engine" in by_stem:
+        lines.append(f"Selection logic -> `{by_stem['context_engine'].relpath.as_posix()}`")
+    if "scanner" in by_stem:
+        lines.append(f"Scanning and filters -> `{by_stem['scanner'].relpath.as_posix()}`")
+    if "renderer" in by_stem:
+        lines.append(f"Export format -> `{by_stem['renderer'].relpath.as_posix()}`")
+    if "cli" in by_stem:
+        lines.append(f"CLI behavior -> `{by_stem['cli'].relpath.as_posix()}`")
+    tests = [item for item in analysis.selected_files if "test" in item.tags][:2]
+    if tests:
+        lines.append(f"Behavior validation -> {', '.join(f'`{item.relpath.as_posix()}`' for item in tests)}")
+    return lines[:6]
+
+
+def build_changed_context(analysis) -> tuple[list[str], list[str], list[str], list[str]]:
+    changed_selected = [item for item in analysis.selected_files if item.path.resolve() in analysis.changed_paths]
+    related_files = [
+        item for item in analysis.selected_files
+        if item.path.resolve() not in analysis.changed_paths and "related to changed files" in item.selection_reasons
+    ]
+    impacted_tests = [
+        item for item in analysis.selected_files
+        if "test" in item.tags and any(reason in item.selection_reasons for reason in ("related test", "related to changed files"))
+    ]
+    changed_lines = [
+        f"`{item.relpath.as_posix()}` — {item.summary}"
+        for item in changed_selected[:8]
+    ]
+    related_lines = [
+        f"`{item.relpath.as_posix()}` — selected because {render_selection_reasons(item.selection_reasons, analysis.config)}."
+        for item in related_files[:8]
+    ]
+    test_lines = [
+        f"`{item.relpath.as_posix()}` — likely impacted coverage or verification path."
+        for item in impacted_tests[:6]
+    ]
+    fallback_lines: list[str] = []
+    if analysis.diff_fallback_notice and not changed_selected:
+        for item in rank_primary_files(analysis)[:6]:
+            fallback_lines.append(f"`{item.relpath.as_posix()}` — selected because {render_selection_reasons(item.selection_reasons, analysis.config)}.")
+    return changed_lines, related_lines, test_lines, fallback_lines
+
+
+def build_selected_context_lines(analysis, total_files: int) -> list[str]:
+    selected_files = len(analysis.selected_files)
+    lines = [
+        f"This pack includes **{selected_files}** file(s) out of **{total_files}** scanned file(s).",
+    ]
+    if analysis.config.context_mode == "full" and selected_files == total_files:
+        lines.append("Full context includes the complete scanned project payload, ordered by likely importance.")
+    elif analysis.config.task_profile == "risk_analysis":
+        lines.append("Selection prioritizes likely regression surfaces, shared dependencies, missing coverage, and high-impact weak spots.")
+    elif analysis.config.context_mode == "diff" and analysis.diff_fallback_notice:
+        lines.append("No valid changed files were available, so this diff pack fell back to central files, key execution paths, and nearby tests.")
+    elif analysis.config.context_mode == "diff":
+        lines.append("Selection starts from changed files and expands to nearby dependencies, related tests, and high-risk context.")
+    else:
+        lines.append("Selection prioritizes entry points, central modules, focus matches, changed files, and related tests.")
+    return lines
+
+
 @dataclass(frozen=True)
 class SectionSpec:
     key: str
@@ -636,10 +1035,13 @@ SECTION_SPECS: dict[str, SectionSpec] = {
     "related_tests": SectionSpec("related_tests", "Related Tests"),
     "documentation": SectionSpec("documentation", "Documentation Included"),
     "score_breakdown": SectionSpec("score_breakdown", "Selection Reason Score Breakdown"),
+    "high_risk_files": SectionSpec("high_risk_files", "High-Risk Files"),
     "folder_summaries": SectionSpec("folder_summaries", "Folder Summaries"),
     "relationship_map": SectionSpec("relationship_map", "Relationship Map"),
     "risks": SectionSpec("risks", "Potential Risks / Hotspots"),
     "coverage_gaps": SectionSpec("coverage_gaps", "Missing Coverage / Gaps"),
+    "shared_impact_areas": SectionSpec("shared_impact_areas", "Shared Dependencies / Broad Impact Areas"),
+    "maintenance_risks": SectionSpec("maintenance_risks", "Weak Spots / Maintenance Risks"),
     "safe_refactor_seams": SectionSpec("safe_refactor_seams", "Safe Refactor Seams"),
     "possible_false_positives": SectionSpec("possible_false_positives", "Possible False Positives"),
     "verification_checklist": SectionSpec("verification_checklist", "Safe Verification Checklist"),
@@ -715,6 +1117,17 @@ REVIEW_SECTION_KEYS = [
     "core_files",
     "score_breakdown",
     "context_payload",
+]
+
+RISK_SECTION_KEYS = [
+    "ai_task_brief",
+    "high_risk_files",
+    "risks",
+    "coverage_gaps",
+    "shared_impact_areas",
+    "maintenance_risks",
+    "context_payload",
+    "suggested_prompts",
 ]
 
 DEBUG_SECTION_KEYS = [
@@ -794,6 +1207,8 @@ def section_keys_for_preview(
 ) -> list[str]:
     if task_profile == "ai_handoff":
         return AI_HANDOFF_SECTION_KEYS
+    if task_profile == "risk_analysis":
+        return RISK_SECTION_KEYS
     if task_profile == "find_dead_code":
         return DEAD_CODE_SECTION_KEYS
     if task_profile == "write_tests":
@@ -844,6 +1259,8 @@ def section_title_for(key: str, task_profile: str, context_mode: str) -> str:
         return "Refactor Goal"
     if key == "ai_task_brief" and task_profile == "write_tests":
         return "Testing Lens"
+    if key == "ai_task_brief" and task_profile == "risk_analysis":
+        return "Risk Objective"
     if key == "ai_task_brief" and task_profile == "find_dead_code":
         return "Dead Code Lens"
     if key == "ai_task_brief" and context_mode == "feature":
@@ -870,6 +1287,8 @@ def section_title_for(key: str, task_profile: str, context_mode: str) -> str:
         return "Related Tests / Missing Tests"
     if key == "related_tests" and task_profile == "write_tests":
         return "Existing Related Tests"
+    if key == "high_risk_files" and task_profile == "risk_analysis":
+        return "High-Risk Files"
     if key == "main_flow" and context_mode == "feature":
         return "Main Flow for Focus Area"
     if key == "main_flow" and task_profile == "bug_report":
@@ -880,16 +1299,35 @@ def section_title_for(key: str, task_profile: str, context_mode: str) -> str:
         return "Weakly Connected Modules"
     if key == "risks" and task_profile == "code_review":
         return "Key Risks / Review Notes"
+    if key == "risks" and task_profile == "risk_analysis":
+        return "Potential Regression Signals"
     if key == "risks" and task_profile == "write_tests":
         return "High-Risk Behaviors"
+    if key == "coverage_gaps" and task_profile == "risk_analysis":
+        return "Missing Coverage / Testing Gaps"
+    if key == "shared_impact_areas" and task_profile == "risk_analysis":
+        return "Shared Dependencies / Broad Impact Areas"
+    if key == "maintenance_risks" and task_profile == "risk_analysis":
+        return "Weak Spots / Maintenance Risks"
     return SECTION_SPECS[key].title
 
 
-def build_changed_context_lines(changed_lines: list[str], related_lines: list[str], impacted_test_lines: list[str]) -> list[str]:
+def build_changed_context_lines(
+    changed_lines: list[str],
+    related_lines: list[str],
+    impacted_test_lines: list[str],
+    fallback_lines: list[str],
+    diff_notice: str = "",
+) -> list[str]:
     lines: list[str] = []
+    if diff_notice:
+        lines.append(diff_notice)
     if changed_lines:
         lines.append("Changed Files:")
         lines.extend(f"- {line}" for line in changed_lines)
+    elif fallback_lines:
+        lines.append("Fallback Context:")
+        lines.extend(f"- {line}" for line in fallback_lines)
     if related_lines:
         lines.append("Related Files:")
         lines.extend(f"- {line}" for line in related_lines)
@@ -1009,17 +1447,27 @@ def generate_markdown(
     where_to_change = build_where_to_change(analysis)
     task_lens = build_task_lens(analysis)
     score_breakdown = build_score_breakdown(analysis)
-    changed_lines, related_changed_lines, impacted_test_lines = build_changed_context(analysis)
+    changed_lines, related_changed_lines, impacted_test_lines, fallback_changed_lines = build_changed_context(analysis)
     ai_handoff = build_ai_handoff(analysis, project_path.name)
     model_guidance = build_model_guidance_lines(analysis.config.ai_profile)
     suggested_prompts = build_suggested_prompts(analysis, project_path.name)
     ignored_context = build_ignored_context(analysis)
     coverage_gaps = build_coverage_gaps(analysis)
+    high_risk_files = build_high_risk_files(analysis)
+    shared_impact_areas = build_shared_impact_areas(analysis)
+    maintenance_risks = build_maintenance_risks(analysis)
+    regression_signals = build_risk_regression_signals(analysis)
     safe_refactor_seams = build_safe_refactor_seams(analysis)
     possible_false_positives = build_possible_false_positives(analysis)
     verification_checklist = build_verification_checklist(analysis)
     selected_context = build_selected_context_lines(analysis, total_files)
-    changed_context_lines = build_changed_context_lines(changed_lines, related_changed_lines, impacted_test_lines)
+    changed_context_lines = build_changed_context_lines(
+        changed_lines,
+        related_changed_lines,
+        impacted_test_lines,
+        fallback_changed_lines,
+        analysis.diff_fallback_notice,
+    )
     now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     md: list[str] = [
@@ -1043,7 +1491,9 @@ def generate_markdown(
 
     if analysis.config.context_mode == "diff":
         md.insert(10, "> Mode: **Git diff**  ")
-        if selected_files == 0:
+        if analysis.diff_fallback_notice:
+            md.insert(11, f"> Result: **{analysis.diff_fallback_notice}**  ")
+        elif selected_files == 0:
             md.insert(11, "> Result: **No changed files matched the current filters**  ")
 
     section_content = {
@@ -1056,15 +1506,18 @@ def generate_markdown(
         "where_to_change": where_to_change,
         "task_lens": task_lens,
         "ai_handoff": ai_handoff,
-        "core_files": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because: {', '.join(item.selection_reasons)}." for item in core_files],
-        "supporting_files": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because: {', '.join(item.selection_reasons)}." for item in supporting_files],
-        "related_tests": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because: {', '.join(item.selection_reasons)}." for item in related_tests],
-        "documentation": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because: {', '.join(item.selection_reasons)}." for item in docs_included],
+        "core_files": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because {render_selection_reasons(item.selection_reasons, analysis.config)}." for item in core_files],
+        "supporting_files": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because {render_selection_reasons(item.selection_reasons, analysis.config)}." for item in supporting_files],
+        "related_tests": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because {render_selection_reasons(item.selection_reasons, analysis.config)}." for item in related_tests],
+        "documentation": [f"`{item.relpath.as_posix()}` — {item.summary} Selected because {render_selection_reasons(item.selection_reasons, analysis.config)}." for item in docs_included],
         "score_breakdown": score_breakdown if show_score_details(analysis.config) else [],
+        "high_risk_files": high_risk_files,
         "folder_summaries": analysis.folder_summaries,
         "relationship_map": analysis.relationships,
-        "risks": analysis.risks,
+        "risks": regression_signals if analysis.config.task_profile == "risk_analysis" else analysis.risks,
         "coverage_gaps": coverage_gaps,
+        "shared_impact_areas": shared_impact_areas,
+        "maintenance_risks": maintenance_risks,
         "safe_refactor_seams": safe_refactor_seams,
         "possible_false_positives": possible_false_positives,
         "verification_checklist": verification_checklist,

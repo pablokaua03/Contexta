@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Plataforma](https://img.shields.io/badge/Plataforma-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
 [![Zero Dependências de Runtime](https://img.shields.io/badge/Depend%C3%AAncias%20de%20Runtime-Zero-brightgreen)]()
-[![Versão](https://img.shields.io/badge/Vers%C3%A3o-1.4.0-purple)]()
+[![Versão](https://img.shields.io/badge/Vers%C3%A3o-1.5.0-purple)]()
 
 <br>
 
@@ -71,7 +71,7 @@ Use o Contexta quando você quer:
 | Selection reasons | Explica por que cada arquivo entrou |
 | Read This First + Main Flow | Facilita leitura rápida por humanos e por modelos |
 | Estimativa de tokens | Mostra uma noção aproximada de custo/tamanho |
-| Builds com PyInstaller | Gera `contexta.exe` e `contexta-safe` |
+| Builds com PyInstaller | Gera um executável nativo para a plataforma atual via `build.bat` ou `build.sh` |
 
 ---
 
@@ -114,7 +114,7 @@ Use o Contexta quando você quer:
 4. Selecione pack, modo, tarefa e compressão
 5. Gere o pack e cole o Markdown na IA
 
-> Se o Windows implicar com o executável onefile, o build `dist/contexta-safe/` costuma passar com menos atrito.
+> O Windows pode implicar com executáveis open-source sem assinatura.
 
 ### Opção B: rodar pelo código-fonte
 
@@ -203,6 +203,16 @@ python contexta.py /caminho/para/projeto --task ai_handoff --compression balance
 # Linux / macOS
 chmod +x build.sh && ./build.sh
 ```
+
+Importante:
+- Gere o executável de Windows no Windows e o executável de Linux no Linux. O PyInstaller não faz cross-compile confiável de Windows para Linux.
+- Em Debian/Ubuntu, instale `python3-tk` antes do build.
+
+Saídas do build:
+- Windows: `dist/contexta.exe`
+- Linux / macOS: `dist/contexta`
+
+Se você quiser o binário Linux sem preparar Linux localmente, rode o workflow do GitHub Actions `.github/workflows/build-linux.yml` e baixe o artefato `contexta-linux`.
 
 ---
 
