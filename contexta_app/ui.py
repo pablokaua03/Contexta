@@ -12,7 +12,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from context_engine import (
+from contexta_app.context_engine import (
     AI_PROFILE_OPTIONS,
     APP_NAME,
     COMPRESSION_OPTIONS,
@@ -22,13 +22,13 @@ from context_engine import (
     PACK_OPTIONS,
     TASK_PROFILE_OPTIONS,
 )
-from renderer import __version__, generate_markdown, section_titles_for_preview
-from scanner import build_tree, count_files, get_git_changed_files, load_gitignore_patterns
-from theme import C, FB, FBS, FH, FL, FM, FS, FT, ThemeRegistry, darken, reg, toggle_theme
-from utils import get_desktop, safe_project_name
+from contexta_app.renderer import __version__, generate_markdown, section_titles_for_preview
+from contexta_app.scanner import build_tree, count_files, get_git_changed_files, load_gitignore_patterns
+from contexta_app.theme import C, FB, FBS, FH, FL, FM, FS, FT, ThemeRegistry, darken, reg, toggle_theme
+from contexta_app.utils import get_desktop, safe_project_name
 
 try:
-    from embedded_icon_data import EMBEDDED_ICON_PNG_BASE64 as EMBEDDED_ICON_PNG_BASE64_FALLBACK
+    from contexta_app.embedded_icon_data import EMBEDDED_ICON_PNG_BASE64 as EMBEDDED_ICON_PNG_BASE64_FALLBACK
 except Exception:
     EMBEDDED_ICON_PNG_BASE64_FALLBACK = ""
 
@@ -204,18 +204,23 @@ def format_token_k(tokens: int) -> str:
 
 
 def _icon_path() -> Path | None:
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-    icon = root / "icon.ico"
-    return icon if icon.is_file() else None
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    candidates = [root / "icon.ico", root / "assets" / "icon.ico"]
+    for icon in candidates:
+        if icon.is_file():
+            return icon
+    return None
 
 
 def _window_icon_source() -> str | None:
+    icon = _icon_path()
+    if icon:
+        return str(icon)
     if sys.platform == "win32" and getattr(sys, "frozen", False):
         executable = Path(sys.executable)
         if executable.is_file():
             return str(executable)
-    icon = _icon_path()
-    return str(icon) if icon else None
+    return None
 
 
 def _enable_windows_dpi_awareness() -> None:
@@ -231,6 +236,17 @@ def _enable_windows_dpi_awareness() -> None:
                 ctypes.windll.shcore.SetProcessDpiAwareness(1)
             except Exception:
                 ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def _set_windows_app_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Contexta.Contexta")
     except Exception:
         pass
 
@@ -295,6 +311,23 @@ def _apply_window_icon(window: tk.Misc, icon_photo: tk.PhotoImage | None) -> Non
             pass
         try:
             window.iconbitmap(default=icon_source)
+        except Exception:
+            pass
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            source = Path(sys.executable if getattr(sys, "frozen", False) else (icon_source or ""))
+            if source.is_file():
+                large = wintypes.HICON()
+                small = wintypes.HICON()
+                extracted = ctypes.windll.shell32.ExtractIconExW(str(source), 0, ctypes.byref(large), ctypes.byref(small), 1)
+                if extracted:
+                    window._contexta_hicon_big = large.value
+                    window._contexta_hicon_small = small.value
+                    ctypes.windll.user32.SendMessageW(window.winfo_id(), 0x0080, 1, large.value)
+                    ctypes.windll.user32.SendMessageW(window.winfo_id(), 0x0080, 0, small.value)
         except Exception:
             pass
 
@@ -498,6 +531,7 @@ class ThemeToggleBtn(tk.Canvas):
 
 class App(tk.Tk):
     def __init__(self):
+        _set_windows_app_id()
         _enable_windows_dpi_awareness()
         super().__init__()
         self.title(f"{APP_NAME} v{__version__}")

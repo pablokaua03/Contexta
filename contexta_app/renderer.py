@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from context_engine import (
+from contexta_app.context_engine import (
     APP_NAME,
     AI_PROFILE_OPTIONS,
     COMPRESSION_OPTIONS,
@@ -21,7 +21,7 @@ from context_engine import (
     extract_relevant_excerpt,
     extract_signatures,
 )
-from scanner import build_diff_tree, build_tree, count_files, get_git_changed_files, load_gitignore_patterns
+from contexta_app.scanner import build_diff_tree, build_tree, count_files, get_git_changed_files, load_gitignore_patterns
 
 __version__ = "1.5.0"
 
@@ -572,9 +572,107 @@ def build_high_risk_files(analysis) -> list[str]:
     ]
     for item in ranked[:6]:
         descriptor = item.summary.rstrip(".")
-        risk_hint = ", ".join(item.risk_reasons[:2]) if item.risk_reasons else "broad-impact module"
-        lines.append(f"`{item.relpath.as_posix()}` — {descriptor}; risk surface: {risk_hint}.")
+        lines.append(f"`{item.relpath.as_posix()}` — {descriptor}; risk surface: {risk_surface_phrase(item)}.")
     return lines
+
+
+def risk_surface_phrase(item) -> str:
+    name = item.path.name.lower()
+    if name == "context_engine.py":
+        return "analysis and context-selection surface"
+    if name == "renderer.py":
+        return "output-shaping surface"
+    if "schema_surface" in item.risk_flags:
+        return "schema or data-shape surface"
+    if {"config_surface", "dependency_surface"} & set(item.risk_flags) == {"config_surface", "dependency_surface"}:
+        return "runtime and dependency configuration surface"
+    if "config_surface" in item.risk_flags:
+        return "runtime or environment configuration surface"
+    if "dependency_surface" in item.risk_flags:
+        return "dependency or build surface"
+    if "request_boundary" in item.risk_flags:
+        return "request or routing boundary"
+    if "user_flow" in item.risk_flags:
+        return "user-facing flow"
+    if "entry_surface" in item.risk_flags:
+        return "startup or bootstrapping surface"
+    if "shared_state" in item.risk_flags:
+        return "shared state or provider surface"
+    if "business_logic" in item.risk_flags:
+        return "business or persistence surface"
+    if "async_boundary" in item.risk_flags:
+        return "background or integration coordination surface"
+    if "mixed_concerns" in item.risk_flags:
+        return "mixed-responsibility surface"
+    if "embedded_asset" in item.risk_flags:
+        return "embedded asset surface"
+    if "size" in item.risk_flags:
+        return "large change-dense surface"
+    if item.risk_reasons:
+        return item.risk_reasons[0]
+    return "broad-impact module"
+
+
+def describe_regression_signal(item) -> str:
+    if item.path.name.lower() == "context_engine.py":
+        return f"`{item.relpath.as_posix()}` concentrates scoring, relationships, and context selection, so changes may affect multiple pack types and exported outputs."
+    if item.path.name.lower() == "renderer.py":
+        return f"`{item.relpath.as_posix()}` shapes final output structure and presentation, so regressions here may affect pack readability and downstream AI handoff quality."
+    if "schema_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` touches schema or data-shape behavior, so changes here can affect persistence, compatibility, or stored data correctness."
+    if "request_boundary" in item.risk_flags and "input_flow" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` sits on a request or submission boundary and should be reviewed for validation, failure handling, and side effects."
+    if "request_boundary" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` sits on a request or routing boundary, so regressions here can change externally visible behavior quickly."
+    if "user_flow" in item.risk_flags and "input_flow" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` appears to handle a user-facing flow with input or submission behavior, so validation and failure paths matter here."
+    if "user_flow" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` appears on a user-facing execution path, so regressions here are likely to be visible quickly."
+    if "config_surface" in item.risk_flags and "dependency_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` governs dependency and runtime configuration, so small changes here may shift broad application behavior before core logic runs."
+    if "config_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` governs runtime or environment configuration, so small changes here can redirect behavior across multiple modules."
+    if "dependency_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` controls dependency or build wiring, so regressions here may change behavior before application code even runs."
+    if "entry_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` participates in startup or bootstrapping, so failures here can block whole execution paths."
+    if "shared_state" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` appears to affect shared state or provider behavior and may have downstream impact beyond its local surface."
+    if "business_logic" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` coordinates business or persistence logic, so changes here may affect multiple downstream behaviors."
+    if "async_boundary" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` coordinates background or integration-heavy work, so timing, retries, or environment differences can matter here."
+    if "mixed_concerns" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` appears large or mixed enough to hide more than one responsibility, which can make regressions harder to isolate."
+    if "coverage_gap" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` looks important to the selected surface without obvious nearby tests, so behavior changes may be harder to verify."
+    if item.risk_reasons:
+        return f"`{item.relpath.as_posix()}` stands out as a likely risk surface because it is {item.risk_reasons[0]}."
+    return f"`{item.relpath.as_posix()}` stands out as a likely risk surface in the selected project context."
+
+
+def describe_maintenance_risk(item) -> str | None:
+    if item.path.name.lower() == "context_engine.py":
+        return f"`{item.relpath.as_posix()}` concentrates scoring, selection, and project analysis logic, so regressions here may affect multiple pack types and outputs."
+    if item.path.name.lower() == "renderer.py":
+        return f"`{item.relpath.as_posix()}` shapes the final pack structure and presentation, so regressions here can affect readability and downstream AI handoff quality."
+    if "mixed_concerns" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` appears to mix responsibilities, which may make safe review and maintenance harder."
+    if "embedded_asset" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` embeds asset payloads inline, which can make packaging or review changes harder to reason about safely."
+    if "schema_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` mixes schema or data-shape concerns into the reviewed surface, so even small edits may deserve migration and compatibility checks."
+    if "config_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` governs runtime configuration, so maintenance changes here can have broad knock-on effects without touching feature code directly."
+    if "dependency_surface" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` controls dependency or build wiring, which can make failures feel far away from the actual change."
+    if "input_flow" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` handles input or submission flow and should be checked for validation, failure handling, and persistence side effects."
+    if "async_boundary" in item.risk_flags:
+        return f"`{item.relpath.as_posix()}` coordinates async, worker, or integration-heavy behavior, which often raises maintenance and debugging cost."
+    if "size" in item.risk_flags and item.line_count >= 600:
+        return f"`{item.relpath.as_posix()}` is large enough that it may be accumulating multiple responsibilities or change paths."
+    return None
 
 
 def build_shared_impact_areas(analysis) -> list[str]:
@@ -604,18 +702,9 @@ def build_maintenance_risks(analysis) -> list[str]:
         key=lambda item: (-item.risk_score, -item.line_count, item.relpath.as_posix()),
     )
     for item in ranked:
-        if item.path.name.lower() == "context_engine.py":
-            lines.append(f"`{item.relpath.as_posix()}` concentrates scoring, selection, and project analysis logic, so regressions here may affect multiple pack types and outputs.")
-        elif item.path.name.lower() == "renderer.py":
-            lines.append(f"`{item.relpath.as_posix()}` shapes the final pack structure and presentation, so regressions here can affect readability and downstream AI handoff quality.")
-        elif "mixed_concerns" in item.risk_flags:
-            lines.append(f"`{item.relpath.as_posix()}` appears to mix responsibilities, which may make safe review and maintenance harder.")
-        elif "embedded_asset" in item.risk_flags:
-            lines.append(f"`{item.relpath.as_posix()}` embeds asset payloads inline, which can make packaging or review changes harder to reason about safely.")
-        elif "input_flow" in item.risk_flags:
-            lines.append(f"`{item.relpath.as_posix()}` handles input or submission flow and should be checked for validation, failure handling, and persistence side effects.")
-        elif "size" in item.risk_flags and item.line_count >= 600:
-            lines.append(f"`{item.relpath.as_posix()}` is large enough that it may be accumulating multiple responsibilities or change paths.")
+        description = describe_maintenance_risk(item)
+        if description:
+            lines.append(description)
         if len(lines) >= 5:
             break
     return lines
@@ -629,24 +718,12 @@ def build_risk_regression_signals(analysis) -> list[str]:
     ]
     for item in ranked[:6]:
         reasons = item.risk_reasons
-        if not reasons:
+        if not reasons and not item.risk_flags:
             continue
-        if item.path.name.lower() == "context_engine.py":
-            lines.append(f"`{item.relpath.as_posix()}` concentrates scoring, relationships, and context selection, so changes may affect multiple pack types and exported outputs.")
-        elif item.path.name.lower() == "renderer.py":
-            lines.append(f"`{item.relpath.as_posix()}` shapes final output structure and presentation, so regressions here may affect pack readability and downstream AI handoff quality.")
-        elif "shared dependency" in reasons or "used by multiple selected files" in reasons:
+        if "shared dependency" in reasons or "used by multiple selected files" in reasons:
             lines.append(f"`{item.relpath.as_posix()}` is shared across multiple selected files and may cause broader regressions if it changes.")
-        elif "input or submission flow" in reasons:
-            lines.append(f"`{item.relpath.as_posix()}` appears to sit on an input or submission path and should be reviewed for validation and failure handling.")
-        elif "mixed responsibilities" in reasons:
-            lines.append(f"`{item.relpath.as_posix()}` appears large or mixed enough to hide more than one responsibility, which can make regressions harder to isolate.")
-        elif "no obvious nearby test coverage" in reasons:
-            lines.append(f"`{item.relpath.as_posix()}` looks important to the selected surface without obvious nearby tests, so behavior changes may be harder to verify.")
-        elif "shared app-wide behavior" in reasons:
-            lines.append(f"`{item.relpath.as_posix()}` appears to affect shared app-wide behavior and may have downstream impact beyond its local surface.")
         else:
-            lines.append(f"`{item.relpath.as_posix()}` stands out as a likely risk surface because it is {reasons[0]}.")
+            lines.append(describe_regression_signal(item))
     lines.extend(analysis.risks)
     return list(dict.fromkeys(lines))[:7]
 

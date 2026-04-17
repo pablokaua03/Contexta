@@ -6,7 +6,7 @@ echo   Contexta - Build Executable
 echo  =========================================
 echo.
 
-set "SPEC_FILE=contexta-onefile.spec"
+set "SPEC_FILE=packaging\pyinstaller\contexta-onefile.spec"
 set "OUTPUT_EXE=dist\contexta.exe"
 
 py --version >nul 2>&1

@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ui import (
+from contexta_app.ui import (
     SCROLL_TARGET_ATTR,
     _window_icon_source,
     can_scroll_target,
@@ -96,9 +96,17 @@ class TestUiHelpers(unittest.TestCase):
         self.assertTrue(can_scroll_target(FakeScrollable((0.2, 1.0)), -1))
         self.assertTrue(can_scroll_target(FakeScrollable((0.0, 0.8)), 1))
 
-    @patch("ui.sys.platform", "win32")
-    @patch("ui.sys.executable", r"C:\laragon\www\contexta\dist\contexta.exe")
-    def test_window_icon_source_prefers_executable_for_frozen_windows_build(self):
+    @patch("contexta_app.ui.sys.platform", "win32")
+    @patch("contexta_app.ui._icon_path", return_value=Path(r"C:\laragon\www\contexta\dist\icon.ico"))
+    @patch("contexta_app.ui.sys.executable", r"C:\laragon\www\contexta\dist\contexta.exe")
+    def test_window_icon_source_prefers_icon_file_when_available(self, _mock_icon_path):
+        with patch.object(sys, "frozen", True, create=True):
+            self.assertEqual(_window_icon_source(), r"C:\laragon\www\contexta\dist\icon.ico")
+
+    @patch("contexta_app.ui.sys.platform", "win32")
+    @patch("contexta_app.ui._icon_path", return_value=None)
+    @patch("contexta_app.ui.sys.executable", r"C:\laragon\www\contexta\dist\contexta.exe")
+    def test_window_icon_source_falls_back_to_executable_for_frozen_windows_build(self, _mock_icon_path):
         with patch.object(sys, "frozen", True, create=True):
             self.assertEqual(_window_icon_source(), r"C:\laragon\www\contexta\dist\contexta.exe")
 

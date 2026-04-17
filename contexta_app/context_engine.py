@@ -12,7 +12,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from scanner import get_language, read_file_safe
+from contexta_app.scanner import get_language, read_file_safe
 
 APP_NAME = "Contexta"
 
@@ -239,6 +239,13 @@ TECH_LABELS = {
     "typescript": "TypeScript",
     "tsx": "React TSX",
     "php": "PHP",
+    "ruby": "Ruby",
+    "elixir": "Elixir",
+    "dart": "Dart",
+    "java": "Java",
+    "csharp": "C#",
+    "go": "Go",
+    "rust": "Rust",
     "html": "HTML",
     "css": "CSS",
     "scss": "SCSS",
@@ -247,6 +254,7 @@ TECH_LABELS = {
     "json": "JSON config",
     "yaml": "YAML",
     "toml": "TOML",
+    "xml": "XML",
     "powershell": "PowerShell",
     "bash": "Shell scripts",
     "markdown": "Markdown docs",
@@ -283,6 +291,27 @@ IDENTITY_FILE_WEIGHTS = {
     "cargo.toml": (8.0, "package manifest"),
     "go.mod": (8.0, "module manifest"),
     "pom.xml": (8.0, "build manifest"),
+    "build.gradle": (8.0, "build manifest"),
+    "build.gradle.kts": (8.0, "build manifest"),
+    "settings.gradle": (6.0, "gradle settings"),
+    "settings.gradle.kts": (6.0, "gradle settings"),
+    "gemfile": (8.0, "ruby dependency manifest"),
+    "angular.json": (8.0, "angular workspace"),
+    "pubspec.yaml": (8.0, "dart/flutter manifest"),
+    "pubspec.yml": (8.0, "dart/flutter manifest"),
+    "mix.exs": (8.0, "elixir manifest"),
+    "manage.py": (7.0, "django management"),
+    "settings.py": (6.0, "django settings"),
+    "urls.py": (6.0, "django routing"),
+    "program.cs": (7.0, "dotnet entrypoint"),
+    "appsettings.json": (6.0, "dotnet config"),
+    "application.properties": (6.0, "spring config"),
+    "application.yml": (6.0, "spring config"),
+    "application.yaml": (6.0, "spring config"),
+    "main.go": (7.0, "go entrypoint"),
+    "main.rs": (7.0, "rust entrypoint"),
+    "router.ex": (7.0, "phoenix routing"),
+    "androidmanifest.xml": (8.0, "android manifest"),
     "tsconfig.json": (6.0, "compiler config"),
     "dockerfile": (5.0, "container build"),
     ".env.example": (4.0, "environment template"),
@@ -296,8 +325,12 @@ IDENTITY_SUFFIX_WEIGHTS = {
 
 IDENTITY_PREFIX_WEIGHTS = {
     "next.config.": (6.5, "framework config"),
+    "nuxt.config.": (6.5, "framework config"),
     "vite.config.": (6.0, "bundler config"),
+    "astro.config.": (6.0, "framework config"),
+    "remix.config.": (6.0, "framework config"),
     "tailwind.config.": (5.0, "styling config"),
+    "application.": (4.0, "spring boot config"),
 }
 
 PROJECT_TYPE_RULES = {
@@ -311,16 +344,87 @@ PROJECT_TYPE_RULES = {
     "backend_api": [
         ("has_fastapi", 5),
         ("has_express", 4),
+        ("has_nest", 5),
         ("has_routes_dir", 3),
         ("has_controllers", 2),
         ("has_db_models", 2),
     ],
+    "django_app": [
+        ("has_django", 8),
+        ("has_manage_py", 5),
+        ("has_python", 2),
+        ("has_db_models", 1),
+    ],
+    "flask_app": [
+        ("has_flask", 8),
+        ("has_python", 2),
+        ("has_routes_dir", 2),
+    ],
+    "spring_boot_app": [
+        ("has_spring_boot", 8),
+        ("has_java", 3),
+        ("has_maven", 2),
+        ("has_gradle", 2),
+    ],
+    "aspnet_app": [
+        ("has_csharp", 5),
+        ("has_nuget", 4),
+        ("has_aspnet", 6),
+        ("has_controllers", 2),
+    ],
+    "java_app": [
+        ("has_java", 4),
+        ("has_maven", 4),
+        ("has_gradle", 4),
+        ("has_controllers", 2),
+        ("has_db_models", 1),
+    ],
+    "android_app": [
+        ("has_android_manifest", 8),
+        ("has_java", 3),
+        ("has_gradle", 3),
+    ],
+    "rails_app": [
+        ("has_rails", 8),
+        ("has_ruby", 3),
+        ("has_routes_dir", 2),
+    ],
+    "phoenix_app": [
+        ("has_phoenix", 8),
+        ("has_elixir", 3),
+        ("has_routes_dir", 2),
+    ],
+    "flutter_app": [
+        ("has_flutter", 8),
+        ("has_dart", 3),
+    ],
+    "desktop_js_app": [
+        ("has_electron", 7),
+        ("has_javascript_runtime", 2),
+    ],
+    "laravel_app": [
+        ("has_laravel", 8),
+        ("has_php", 2),
+        ("has_composer", 2),
+        ("has_routes_dir", 1),
+    ],
     "php_crud_app": [
-        ("has_php", 3),
-        ("has_composer", 3),
-        ("has_form_pages", 3),
-        ("has_service_layer", 2),
-        ("has_dao_layer", 3),
+        ("has_php", 5),
+        ("has_composer", 4),
+        ("has_php_forms", 3),
+        ("has_php_service_layer", 2),
+        ("has_php_dao_layer", 3),
+    ],
+    "go_app": [
+        ("has_go", 5),
+        ("has_go_modules", 4),
+        ("has_go_cmd_dir", 2),
+        ("has_routes_dir", 1),
+    ],
+    "rust_app": [
+        ("has_rust", 5),
+        ("has_cargo", 4),
+        ("has_rust_web", 3),
     ],
     "desktop_python_app": [
         ("has_python", 3),
@@ -333,15 +437,36 @@ PROJECT_TYPE_RULES = {
 PROJECT_TYPE_LABELS = {
     "frontend_web_app": "Frontend web application",
     "backend_api": "Backend API service",
+    "django_app": "Django web application",
+    "flask_app": "Flask web application",
+    "spring_boot_app": "Spring Boot application",
+    "aspnet_app": "ASP.NET Core application",
+    "java_app": "Java application",
+    "android_app": "Android application",
+    "rails_app": "Ruby on Rails application",
+    "phoenix_app": "Phoenix web application",
+    "flutter_app": "Flutter application",
+    "desktop_js_app": "Electron desktop application",
+    "laravel_app": "Laravel web application",
     "php_crud_app": "PHP CRUD web application",
+    "go_app": "Go application",
+    "rust_app": "Rust application",
     "desktop_python_app": "Desktop GUI + CLI developer tool",
 }
 
 DOMAIN_HINTS = {
-    "education": ["aluno", "alunos", "escola", "matricula", "matrícula", "professor", "turma", "student", "students", "school", "course"],
-    "ecommerce": ["cart", "checkout", "product", "products", "catalog", "catalogo", "catálogo", "price", "pricing", "order"],
-    "marketing_site": ["hero", "navbar", "footer", "cta", "landing", "testimonial", "marketing", "campaign", "banner"],
-    "admin_panel": ["dashboard", "users", "settings", "reports", "admin", "management", "analytics"],
+    "education": ["aluno", "alunos", "escola", "matricula", "matrícula", "professor", "turma", "student", "students", "school", "course", "classroom", "grade", "lesson", "enrollment"],
+    "ecommerce": ["cart", "checkout", "product", "products", "catalog", "catalogo", "catálogo", "price", "pricing", "order", "inventory", "payment", "shipping", "store"],
+    "marketing_site": ["hero", "navbar", "footer", "cta", "landing", "testimonial", "marketing", "campaign", "banner", "newsletter", "conversion"],
+    "admin_panel": ["dashboard", "users", "settings", "reports", "admin", "management", "analytics", "permission", "role", "audit", "log"],
+    "task_management": ["task", "tasks", "kanban", "board", "sprint", "backlog", "ticket", "issue", "workflow", "todo", "milestone", "assignee", "priority", "status", "column", "card"],
+    "finance": ["invoice", "payment", "transaction", "balance", "account", "ledger", "budget", "expense", "revenue", "billing", "tax", "receipt"],
+    "healthcare": ["patient", "medical", "hospital", "diagnosis", "appointment", "doctor", "prescription", "clinic", "health", "record"],
+    "social": ["feed", "post", "comment", "like", "follow", "friend", "message", "notification", "profile", "mention"],
+    "image_editing": ["image", "editor", "editing", "photo", "photoshop", "layer", "layers", "brush", "filter", "canvas", "pixel", "crop", "mask", "raster", "palette"],
+    "graph_analysis": ["graph", "graphs", "network", "networks", "node", "nodes", "edge", "edges", "gephi", "layout", "centrality", "community", "visualization", "visualisation", "cluster"],
+    "content_management": ["cms", "article", "articles", "editorial", "publish", "published", "draft", "slug", "author", "contentful", "storyblok", "sanity"],
+    "developer_tooling": ["cli", "command", "repo", "repository", "plugin", "build", "export", "analysis", "scanner", "renderer", "pack", "prompt", "workflow"],
 }
 
 FRONTEND_PAGE_LANGS = {"tsx", "jsx", "vue", "svelte", "html", "php"}
@@ -1195,10 +1320,17 @@ def infer_exact_name_role(item: FileInsight) -> str | None:
         "utils.py": "Provides small desktop-path and filename helpers used by the app entry points.",
         "package.json": "Declares project dependencies and package metadata.",
         "composer.json": "Declares project dependencies and package metadata.",
+        "gemfile": "Declares Ruby dependencies and Bundler-managed package metadata.",
         "pyproject.toml": "Declares project dependencies and package metadata.",
+        "mix.exs": "Declares Elixir application metadata, dependencies, and Mix build settings.",
+        "pubspec.yaml": "Declares Dart or Flutter package metadata, dependencies, and app configuration.",
+        "pubspec.yml": "Declares Dart or Flutter package metadata, dependencies, and app configuration.",
         "cargo.toml": "Declares project dependencies and package metadata.",
         "go.mod": "Declares project dependencies and package metadata.",
         "pom.xml": "Declares project dependencies and package metadata.",
+        "angular.json": "Defines Angular workspace configuration, builders, and project targets.",
+        "program.cs": "Acts as the .NET application entrypoint and host/bootstrap configuration.",
+        "appsettings.json": "Defines ASP.NET Core environment and application settings.",
         "tsconfig.json": "Defines TypeScript compiler options and project path aliases.",
         "requirements.txt": "Documents Python runtime, packaging, and test-time dependency expectations.",
         "build.bat": "Automates Windows executable packaging through PyInstaller build steps.",
@@ -1211,8 +1343,14 @@ def infer_exact_name_role(item: FileInsight) -> str | None:
         return "Defines the PyInstaller build spec used to package the desktop application."
     if name.startswith("next.config."):
         return "Defines Next.js build and runtime configuration."
+    if name.startswith("nuxt.config."):
+        return "Defines Nuxt build, runtime, and application configuration."
     if name.startswith("vite.config."):
         return "Defines Vite build and runtime configuration."
+    if name.startswith("astro.config."):
+        return "Defines Astro build and site-generation configuration."
+    if name.startswith("remix.config."):
+        return "Defines Remix routing and build configuration."
     return None
 
 
@@ -1355,6 +1493,122 @@ def infer_file_role_with_project_context(item: FileInsight, project_type: str | 
             return "Implements service-layer logic that coordinates domain operations."
         if "dao" in name or "repository" in name or signals.has_dao_usage:
             return "Handles persistence and data access operations."
+
+    if project_type in {"Django web application", "Flask web application"}:
+        if name == "manage.py":
+            return "Django management entry point for running commands, migrations, and the dev server."
+        if name in {"settings.py", "settings"}:
+            return "Configures Django application settings, installed apps, databases, and middleware."
+        if name == "urls.py":
+            return "Defines URL routing patterns for the Django application."
+        if name == "models.py" or "/models/" in rel:
+            return "Defines database models and ORM schema for the application domain."
+        if name == "views.py" or "/views/" in rel:
+            return "Implements view logic that handles HTTP requests and returns responses."
+        if name == "serializers.py" or "/serializers/" in rel:
+            return "Defines serializers for transforming model instances to/from JSON."
+        if name == "admin.py":
+            return "Registers models with the Django admin interface."
+        if name == "forms.py" or "/forms/" in rel:
+            return "Defines form classes for user input validation and processing."
+        if "migrations" in rel:
+            return "Database migration file tracking schema changes over time."
+        if "service" in name or "/services/" in rel:
+            return "Implements service-layer logic that coordinates domain operations."
+        if "repository" in name or "/repositories/" in rel:
+            return "Handles data access and query operations for a domain entity."
+
+    if project_type in {"Spring Boot application", "Spring web application", "Java application"}:
+        if "controller" in name or "/controller/" in rel or "/controllers/" in rel:
+            return "Implements REST controller endpoints that handle HTTP requests."
+        if "service" in name or "/service/" in rel or "/services/" in rel:
+            return "Implements business logic in the service layer."
+        if "repository" in name or "/repository/" in rel or "dao" in name or "/dao/" in rel:
+            return "Handles data access and persistence using JPA/Hibernate repositories."
+        if "entity" in name or "model" in name or "/entity/" in rel or "/model/" in rel:
+            return "Defines a JPA entity or domain model mapped to a database table."
+        if "config" in name or "/config/" in rel:
+            return "Configures Spring application context, beans, or security settings."
+        if name.endswith("application.java") or ("application" in name and name.endswith(".java")):
+            return "Main Spring Boot application entry point with `@SpringBootApplication`."
+        if name in {"application.properties", "application.yml", "application.yaml"}:
+            return "Configures Spring Boot application properties and environment settings."
+        if name == "pom.xml":
+            return "Maven build descriptor defining project dependencies, plugins, and build lifecycle."
+        if name in {"build.gradle", "build.gradle.kts"}:
+            return "Gradle build script defining project dependencies and build tasks."
+
+    if project_type == "ASP.NET Core application":
+        if name == "program.cs":
+            return "Acts as the ASP.NET Core application entrypoint and host/bootstrap configuration."
+        if name == "appsettings.json":
+            return "Defines ASP.NET Core environment and application settings."
+        if "controller" in name or "/controller" in rel or "/controllers/" in rel:
+            return "Implements ASP.NET Core controller endpoints that handle HTTP requests."
+        if "service" in name or "/services/" in rel:
+            return "Implements service-layer logic used by the ASP.NET Core application."
+        if "middleware" in name or "/middleware/" in rel:
+            return "Implements ASP.NET Core middleware in the request pipeline."
+
+    if project_type == "Android application":
+        if name == "androidmanifest.xml":
+            return "Declares Android app components, permissions, and metadata."
+        if "activity" in name:
+            return "Implements an Android Activity screen."
+        if "fragment" in name:
+            return "Implements an Android Fragment UI component."
+        if "viewmodel" in name:
+            return "Implements a ViewModel for managing UI-related data in the Android architecture."
+        if "adapter" in name:
+            return "Implements a RecyclerView or list adapter for displaying collections."
+        if name in {"build.gradle", "build.gradle.kts"}:
+            return "Gradle build script for the Android module."
+
+    if project_type == "Ruby on Rails application":
+        if name == "gemfile":
+            return "Declares Ruby dependencies and Bundler-managed application packages."
+        if rel.endswith("config/routes.rb"):
+            return "Defines Rails routes that map requests to controller actions."
+        if "controller" in name or "/controllers/" in rel:
+            return "Implements Rails controller actions for request handling."
+        if "model" in name or "/models/" in rel:
+            return "Defines an Active Record model used by the application domain."
+        if "/views/" in rel:
+            return "Defines a Rails view template rendered for user-facing pages."
+        if "migration" in rel:
+            return "Database migration file tracking schema changes over time."
+
+    if project_type == "Phoenix web application":
+        if name == "mix.exs":
+            return "Declares Elixir application metadata, dependencies, and Mix build settings."
+        if name == "router.ex" or "/router.ex" in rel:
+            return "Defines Phoenix routes, pipelines, and controller or LiveView dispatch."
+        if "controller" in name or "/controllers/" in rel:
+            return "Implements Phoenix controller actions for HTTP request handling."
+        if "/live/" in rel or "live" in name:
+            return "Implements a Phoenix LiveView or live component."
+        if "/templates/" in rel:
+            return "Defines Phoenix server-rendered templates or component markup."
+
+    if project_type == "Flutter application":
+        if name in {"pubspec.yaml", "pubspec.yml"}:
+            return "Declares Flutter package metadata, dependencies, and platform configuration."
+        if rel.endswith("lib/main.dart"):
+            return "Acts as the Flutter application entrypoint and root widget bootstrap."
+        if "widget" in name or "/widgets/" in rel:
+            return "Defines a reusable Flutter widget used across screens."
+        if "screen" in name or "page" in name or "/screens/" in rel:
+            return "Implements a Flutter screen or routed page."
+
+    if project_type == "Electron desktop application":
+        if name == "package.json":
+            return "Declares Electron dependencies, scripts, and package metadata."
+        if name in {"main.js", "main.ts"}:
+            return "Acts as the Electron main-process entrypoint and desktop runtime bootstrap."
+        if "preload" in name:
+            return "Defines the Electron preload bridge between the main process and renderer."
+        if "/renderer/" in rel or name in {"index.tsx", "index.jsx", "app.tsx", "app.jsx"}:
+            return "Implements renderer-process UI for the Electron desktop application."
 
     return None
 
@@ -1751,6 +2005,59 @@ def parse_go_mod_dependencies(content: str) -> set[str]:
     return deps
 
 
+def parse_gemfile_dependencies(content: str) -> set[str]:
+    deps: set[str] = set()
+    for gem_name in re.findall(r"""^\s*gem\s+['"]([^'"]+)['"]""", content, re.MULTILINE):
+        deps.add(gem_name.lower())
+    return deps
+
+
+def parse_mix_dependencies(content: str) -> set[str]:
+    deps: set[str] = set()
+    for dep_name in re.findall(r"\{\s*:([a-zA-Z0-9_]+)\s*,", content):
+        deps.add(dep_name.lower())
+    return deps
+
+
+def parse_pubspec_dependencies(content: str) -> set[str]:
+    deps: set[str] = set()
+    in_dependencies = False
+    for raw_line in content.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if re.match(r"^[A-Za-z0-9_-]+:\s*$", line) and not line.startswith("  "):
+            in_dependencies = stripped.startswith(("dependencies:", "dev_dependencies:"))
+            continue
+        if in_dependencies and line.startswith("  "):
+            name = stripped.split(":", 1)[0].strip()
+            if name:
+                deps.add(name.lower())
+        elif not line.startswith("  "):
+            in_dependencies = False
+    return deps
+
+
+def parse_gradle_dependencies(content: str) -> set[str]:
+    deps: set[str] = set()
+    for raw_dep in re.findall(r"""['"]([A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+(?::[A-Za-z0-9+_.-]+)?)['"]""", content):
+        parts = raw_dep.split(":")
+        if len(parts) >= 2:
+            group = parts[0].lower()
+            artifact = parts[1].lower()
+            deps.add(artifact)
+            deps.add(f"{group}:{artifact}")
+    return deps
+
+
+def parse_gradle_scripts(content: str) -> list[str]:
+    scripts: list[str] = []
+    scripts.extend(re.findall(r"^\s*task\s+([A-Za-z_][A-Za-z0-9_]*)", content, re.MULTILINE))
+    scripts.extend(re.findall(r"""tasks\.register\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["']""", content))
+    return list(dict.fromkeys(scripts))
+
+
 def parse_toml_section_keys(content: str, section_name: str) -> set[str]:
     match = re.search(rf"\[{re.escape(section_name)}\](.*?)(?:\n\[|$)", content, re.DOTALL | re.IGNORECASE)
     if not match:
@@ -1817,6 +2124,8 @@ def parse_manifest_scripts(item: FileInsight) -> list[str]:
         return parse_package_scripts(item.content)
     if name == "pyproject.toml":
         return parse_pyproject_scripts(item.content)
+    if name in {"build.gradle", "build.gradle.kts"}:
+        return parse_gradle_scripts(item.content)
     if name.endswith(".csproj"):
         return parse_csproj_scripts(item.content)
     if name == "pom.xml":
@@ -1828,14 +2137,22 @@ def get_dependency_names(item: FileInsight) -> set[str]:
     name = item.path.name.lower()
     if name in {"package.json", "composer.json"}:
         return set(parse_json_dependencies(item.content))
+    if name == "gemfile":
+        return parse_gemfile_dependencies(item.content)
     if name == "requirements.txt":
         return parse_requirements_dependencies(item.content)
     if name == "pyproject.toml":
         return parse_pyproject_dependencies(item.content)
+    if name == "mix.exs":
+        return parse_mix_dependencies(item.content)
+    if name in {"pubspec.yaml", "pubspec.yml"}:
+        return parse_pubspec_dependencies(item.content)
     if name == "cargo.toml":
         return parse_toml_section_keys(item.content, "dependencies") | parse_toml_section_keys(item.content, "dev-dependencies")
     if name == "go.mod":
         return parse_go_mod_dependencies(item.content)
+    if name in {"build.gradle", "build.gradle.kts"}:
+        return parse_gradle_dependencies(item.content)
     if name == "pom.xml" or name.endswith(".csproj"):
         return parse_xml_package_references(item.content)
     return set()
@@ -1864,19 +2181,47 @@ def prioritize_dependencies(dependency_names: set[str]) -> list[str]:
     priority_order = [
         "next",
         "react",
+        "nuxt",
+        "@angular/core",
         "vue",
         "svelte",
         "@sveltejs/kit",
+        "@remix-run/dev",
+        "astro",
         "typescript",
         "tailwindcss",
         "@tailwindcss/postcss",
         "firebase",
         "fastapi",
         "django",
+        "djangorestframework",
         "flask",
+        "sqlalchemy",
+        "celery",
         "express",
+        "@nestjs/core",
+        "rails",
+        "phoenix",
+        "flutter",
+        "electron",
         "laravel/framework",
         "illuminate/database",
+        "microsoft.aspnetcore.app",
+        "microsoft.aspnetcore.mvc",
+        "gin",
+        "github.com/gin-gonic/gin",
+        "github.com/gofiber/fiber",
+        "github.com/labstack/echo",
+        "spring-boot-starter-web",
+        "spring-boot-starter",
+        "spring-core",
+        "spring-web",
+        "hibernate-core",
+        "spring-data-jpa",
+        "actix-web",
+        "axum",
+        "rocket",
+        "tauri",
     ]
     selected: list[str] = []
     lowered = {dep.lower() for dep in dependency_names}
@@ -1898,18 +2243,47 @@ def signal_evidence_text(signal: str) -> str:
         "has_tailwind": "Tailwind CSS tooling was detected.",
         "has_fastapi": "Python dependency manifests include `fastapi`.",
         "has_express": "`package.json` includes `express`.",
+        "has_nest": "`package.json` includes NestJS core dependencies.",
         "has_routes_dir": "A `routes` directory is present.",
         "has_controllers": "A `controllers` directory is present.",
         "has_db_models": "Model-like files or directories were detected.",
         "has_php": "PHP source files were detected.",
         "has_composer": "`composer.json` is present.",
+        "has_php_forms": "PHP form-oriented pages or `<form>` markup were detected.",
+        "has_php_service_layer": "PHP service-layer files were detected.",
+        "has_php_dao_layer": "PHP DAO or repository files were detected.",
+        "has_django": "Django framework was detected in Python dependencies.",
+        "has_flask": "Flask framework was detected in Python dependencies.",
+        "has_manage_py": "`manage.py` Django management script is present.",
+        "has_spring_boot": "Spring Boot was detected in Java dependencies.",
+        "has_aspnet": "ASP.NET Core signals were detected from NuGet dependencies or Program.cs.",
+        "has_java": "Java source files were detected.",
+        "has_csharp": "C# source files were detected.",
+        "has_ruby": "Ruby source files were detected.",
+        "has_elixir": "Elixir source files were detected.",
+        "has_dart": "Dart source files were detected.",
+        "has_maven": "`pom.xml` Maven build descriptor is present.",
+        "has_gradle": "Gradle build files were detected.",
+        "has_android_manifest": "`AndroidManifest.xml` was detected.",
+        "has_rails": "Rails conventions were detected from `Gemfile`, `config/routes.rb`, or `bin/rails`.",
+        "has_phoenix": "Phoenix conventions were detected from `mix.exs` or router files.",
+        "has_flutter": "`pubspec.yaml` or `lib/main.dart` indicates a Flutter application.",
+        "has_electron": "`package.json` includes Electron dependencies.",
+        "has_laravel": "Laravel framework or standard Laravel structure was detected.",
         "has_form_pages": "Form-oriented pages or `<form>` markup were detected.",
         "has_service_layer": "Service-layer files were detected.",
         "has_dao_layer": "DAO or repository files were detected.",
         "has_python": "Python source files were detected.",
+        "has_go": "Go source files were detected.",
+        "has_go_modules": "`go.mod` is present.",
+        "has_go_cmd_dir": "A `cmd/` directory is present.",
+        "has_rust": "Rust source files were detected.",
+        "has_cargo": "`Cargo.toml` is present.",
+        "has_rust_web": "Rust web framework dependencies were detected.",
         "has_tkinter": "Tkinter imports were detected.",
         "has_cli_entrypoint": "CLI entry signals were detected.",
         "has_gui_module": "GUI-oriented modules were detected.",
+        "has_javascript_runtime": "Node.js-style runtime entry signals were detected.",
     }
     return mapping.get(signal, signal.replace("_", " "))
 
@@ -1926,6 +2300,18 @@ def compute_project_type_signals(
     lower_dirs = {item.relpath.parts[0].lower() for item in insights if item.relpath.parts}
     relpaths = [item.relpath.as_posix().lower() for item in insights]
     names = [item.path.name.lower() for item in insights]
+    content_blob = "\n".join(item.content.lower()[:4000] for item in insights[:80])
+
+    has_php = any(item.lang == "php" for item in insights)
+    has_java = any(item.lang == "java" for item in insights)
+    has_csharp = any(item.lang == "csharp" for item in insights)
+    has_go = any(item.lang == "go" for item in insights)
+    has_rust = any(item.lang == "rust" for item in insights)
+    has_ruby = any(item.lang == "ruby" for item in insights)
+    has_elixir = any(item.lang == "elixir" for item in insights)
+    has_dart = any(item.lang == "dart" for item in insights)
+    php_names = [item.path.name.lower() for item in insights if item.lang == "php"]
+    php_relpaths = [item.relpath.as_posix().lower() for item in insights if item.lang == "php"]
 
     return {
         "has_next": "Next.js" in frameworks,
@@ -1934,19 +2320,59 @@ def compute_project_type_signals(
         "has_components_dir": "components" in lower_dirs or any("/components/" in path for path in relpaths),
         "has_tailwind": "Tailwind CSS" in build_tools,
         "has_fastapi": "FastAPI" in frameworks,
+        "has_django": "Django" in frameworks,
+        "has_flask": "Flask" in frameworks,
+        "has_nest": "NestJS" in frameworks,
+        "has_manage_py": any(name == "manage.py" for name in names),
+        "has_spring_boot": "Spring Boot" in frameworks,
+        "has_aspnet": "ASP.NET Core" in frameworks or "webapplication.createbuilder" in content_blob or "mapcontrollers()" in content_blob,
+        "has_java": has_java,
+        "has_csharp": has_csharp,
+        "has_ruby": has_ruby,
+        "has_elixir": has_elixir,
+        "has_dart": has_dart,
+        "has_maven": "Maven" in package_managers,
+        "has_gradle": "Gradle" in package_managers,
+        "has_android_manifest": any(name == "androidmanifest.xml" for name in names),
+        "has_rails": "Rails" in frameworks,
+        "has_phoenix": "Phoenix" in frameworks,
+        "has_flutter": "Flutter" in frameworks,
+        "has_electron": "Electron" in frameworks,
         "has_express": "express" in dependency_names,
         "has_routes_dir": "routes" in lower_dirs or any("/routes/" in path for path in relpaths),
         "has_controllers": "controllers" in lower_dirs or any("/controllers/" in path for path in relpaths),
         "has_db_models": "models" in lower_dirs or any("/models/" in path for path in relpaths),
-        "has_php": any(item.lang == "php" for item in insights),
+        "has_php": has_php,
         "has_composer": "Composer" in package_managers,
-        "has_form_pages": any("form" in name for name in names) or any("<form" in item.content.lower() for item in insights if item.lang in {"html", "php", "jsx", "tsx"}),
+        "has_laravel": "Laravel" in frameworks,
+        # PHP-specific signals (prevent false positives on Python/Java projects)
+        "has_php_forms": has_php and (
+            any("form" in n for n in php_names)
+            or any("<form" in item.content.lower() for item in insights if item.lang == "php")
+        ),
+        "has_php_service_layer": has_php and (
+            any("service" in n for n in php_names) or any("/services/" in p for p in php_relpaths)
+        ),
+        "has_php_dao_layer": has_php and (
+            any("dao" in n or "repository" in n for n in php_names)
+            or any("/repositories/" in p or "/dao/" in p for p in php_relpaths)
+        ),
+        # Keep generic signals for backend_api detection (non-PHP projects)
+        "has_form_pages": any("form" in name for name in names) or any("<form" in item.content.lower() for item in insights if item.lang in {"html", "jsx", "tsx"}),
         "has_service_layer": any("service" in name for name in names) or any("/services/" in path for path in relpaths),
         "has_dao_layer": any("dao" in name or "repository" in name for name in names) or any("/repositories/" in path or "/dao/" in path for path in relpaths),
         "has_python": any(item.lang == "python" for item in insights),
+        "has_go": has_go,
+        "has_go_modules": "Go modules" in package_managers,
+        "has_go_cmd_dir": "cmd" in lower_dirs or any(path.startswith("cmd/") for path in relpaths),
+        "has_rust": has_rust,
+        "has_cargo": "Cargo" in package_managers,
+        "has_rust_web": any(framework in frameworks for framework in {"Actix Web", "Axum", "Rocket"}),
         "has_tkinter": "Tkinter" in frameworks,
         "has_cli_entrypoint": any("cli" in item.tags for item in entrypoints + insights),
         "has_gui_module": any("ui" in item.tags for item in insights),
+        "has_nuget": "NuGet" in package_managers,
+        "has_javascript_runtime": "Node.js" in runtime,
     }
 
 
@@ -1972,7 +2398,9 @@ def extract_domain_corpus_tokens(insights: list[FileInsight]) -> list[str]:
         visible_text = []
         visible_text.extend(re.findall(r">([^<]{3,80})<", item.content))
         visible_text.extend(re.findall(r'["\']([^"\']{3,80})["\']', item.content[:6000]))
-        for chunk in path_tokens + symbol_tokens + visible_text:
+        xml_tokens = re.findall(r"</?([A-Za-z0-9:_-]{3,})", item.content[:6000])
+        attr_names = re.findall(r'([A-Za-z0-9:_-]{3,})\s*=', item.content[:6000])
+        for chunk in path_tokens + symbol_tokens + visible_text + xml_tokens + attr_names:
             tokens.extend(re.findall(r"[A-Za-zÀ-ÿ]{3,}", chunk.lower()))
     return tokens
 
@@ -2022,24 +2450,109 @@ def detect_domain_label(insights: list[FileInsight]) -> tuple[str | None, int]:
 
 
 def infer_probable_purpose(project_type_label: str | None, domain_label: str | None) -> str:
-    if project_type_label == "PHP CRUD web application" and domain_label == "education":
-        return "Manage student records through listing, form editing, and service or DAO-backed operations."
-    if project_type_label == "Frontend web application" and domain_label == "marketing_site":
-        return "Present a marketing-focused website with landing sections, navigation, and product or content highlights."
-    if project_type_label == "Frontend web application" and domain_label == "ecommerce":
-        return "Present a marketing or catalog-oriented frontend with products, browsing flows, and shopping-adjacent experiences."
-    if project_type_label == "Backend API service" and domain_label == "admin_panel":
-        return "Support administrative or reporting workflows through backend endpoints and data access layers."
+    purpose_by_pair = {
+        ("PHP CRUD web application", "education"): "Manage student records through listing, form editing, and service or DAO-backed operations.",
+        ("Frontend web application", "marketing_site"): "Present a marketing-focused website with landing sections, navigation, and product or content highlights.",
+        ("Frontend web application", "ecommerce"): "Present a marketing or catalog-oriented frontend with products, browsing, pricing, and shopping-adjacent flows.",
+        ("Frontend web application", "task_management"): "Deliver a task or kanban-style interface with boards, assignees, priorities, and workflow status tracking.",
+        ("Backend API service", "task_management"): "Expose backend services for task or kanban workflows with assignment, status, and workflow logic.",
+        ("Django web application", "task_management"): "Support task or kanban workflows through Django views, models, and template-driven UI flows.",
+        ("Django web application", "education"): "Manage academic records and educational workflows through Django views, models, and admin interfaces.",
+        ("Flask web application", "task_management"): "Support task or workflow-oriented routes through lightweight Flask services and Python application logic.",
+        ("Spring Boot application", "task_management"): "Implement Java backend services for task or kanban workflows with controllers, services, and persistence logic.",
+        ("Spring Boot application", "ecommerce"): "Provide Java backend services for an e-commerce platform with product, order, and payment-oriented flows.",
+        ("ASP.NET Core application", "task_management"): "Expose ASP.NET Core endpoints and backend logic for task, board, and workflow management features.",
+        ("Laravel web application", "education"): "Manage education-related records through Laravel routes, controllers, models, and persistence-backed forms.",
+        ("Laravel web application", "ecommerce"): "Deliver a full-stack commerce application with Laravel controllers, models, and storefront or admin flows.",
+        ("Ruby on Rails application", "education"): "Deliver a Rails application for academic records, enrollment, or classroom-oriented workflows.",
+        ("Ruby on Rails application", "ecommerce"): "Deliver a Rails application with storefront, catalog, ordering, and admin workflows.",
+        ("Phoenix web application", "task_management"): "Support workflow or board-oriented features through Phoenix routers, controllers, and Elixir-backed services.",
+        ("Flutter application", "task_management"): "Deliver a Flutter application for task, board, or status-tracking workflows across mobile or desktop surfaces.",
+        ("Electron desktop application", "image_editing"): "Provide desktop image or asset-editing workflows through a web-powered desktop shell.",
+        ("Go application", "task_management"): "Provide Go-based services or tooling for task, board, and workflow management operations.",
+        ("Rust application", "graph_analysis"): "Analyze, transform, or serve graph and network data with performance-oriented Rust modules.",
+        ("Desktop GUI + CLI developer tool", "developer_tooling"): "Scan local repositories and generate curated context packs for AI workflows.",
+        ("Desktop GUI + CLI developer tool", "image_editing"): "Provide desktop editing workflows for image or asset manipulation through GUI and command-driven tooling.",
+    }
     if project_type_label == "Desktop GUI + CLI developer tool":
         return "Scan local repositories and generate curated context packs for AI workflows."
+    if (project_type_label, domain_label) in purpose_by_pair:
+        return purpose_by_pair[(project_type_label, domain_label)]
+
+    domain_fragments = {
+        "education": "education, student, or academic workflows",
+        "ecommerce": "product, catalog, ordering, or storefront workflows",
+        "marketing_site": "marketing, landing-page, or content-presentation flows",
+        "admin_panel": "administrative dashboards, settings, and reporting workflows",
+        "task_management": "task, kanban, sprint, or workflow management",
+        "finance": "payments, billing, accounting, or financial record flows",
+        "healthcare": "patient, appointment, or medical-record workflows",
+        "social": "feeds, profiles, messaging, or social interaction flows",
+        "image_editing": "image editing, asset manipulation, or visual design workflows",
+        "graph_analysis": "graph, network, or relationship-analysis workflows",
+        "content_management": "content editing, publishing, and page management workflows",
+        "developer_tooling": "developer tooling, automation, or repository-analysis workflows",
+    }
+    project_fragments = {
+        "Django web application": "through Django views, models, URL routing, and template rendering",
+        "Flask web application": "through Flask routes and Python application logic",
+        "Spring Boot application": "through Spring Boot controllers, services, and repositories",
+        "Spring web application": "through Java web modules, services, and persistence layers",
+        "Java application": "through Java classes, services, and persistence-oriented modules",
+        "ASP.NET Core application": "through ASP.NET Core controllers, middleware, and service layers",
+        "Laravel web application": "through Laravel controllers, models, migrations, and Blade views",
+        "Ruby on Rails application": "through Rails routes, controllers, models, and server-rendered views",
+        "Phoenix web application": "through Phoenix routers, controllers, LiveView or template flows, and Elixir services",
+        "Flutter application": "through Dart widgets, screens, and mobile or desktop runtime integrations",
+        "Electron desktop application": "through Electron entrypoints, renderer processes, and desktop packaging workflows",
+        "Backend API service": "through API-oriented routes, services, and integration layers",
+        "Frontend web application": "through routed pages, shared UI components, and frontend tooling",
+        "PHP CRUD web application": "through routed pages, forms, and persistence-oriented PHP modules",
+        "Python application": "through Python modules and supporting application logic",
+        "Go application": "through Go packages, modules, and entrypoint-driven services or tools",
+        "Rust application": "through Rust crates, modules, and Cargo-managed binaries or services",
+        ".NET application": "through C# modules and NuGet-managed application services",
+        "Android application": "through Android activities, manifests, resources, and SDK integrations",
+    }
+
+    if project_type_label and domain_label in domain_fragments:
+        fragment = project_fragments.get(project_type_label, f"through the detected {project_type_label.lower()}")
+        return f"Support {domain_fragments[domain_label]} {fragment}."
+
+    if project_type_label == "Django web application":
+        return "Deliver a full-stack web application with Django views, models, URL routing, and template rendering."
+    if project_type_label == "Flask web application":
+        return "Serve a lightweight web application or API through Flask routes and Python application logic."
+    if project_type_label == "Spring Boot application":
+        return "Expose REST APIs and backend services through Spring Boot controllers, services, and repositories."
+    if project_type_label == "ASP.NET Core application":
+        return "Expose web application or API functionality through ASP.NET Core controllers, middleware, and dependency-injected services."
+    if project_type_label == "Ruby on Rails application":
+        return "Deliver a full-stack Rails application through routes, controllers, models, and convention-driven server rendering."
+    if project_type_label == "Phoenix web application":
+        return "Deliver a Phoenix application through routers, controllers, LiveView or template flows, and Elixir services."
+    if project_type_label == "Flutter application":
+        return "Deliver a Flutter application through Dart widgets, screens, and cross-platform runtime integrations."
+    if project_type_label == "Electron desktop application":
+        return "Deliver a desktop application through Electron main-process orchestration and renderer-based UI flows."
+    if project_type_label in {"Spring web application", "Java application"}:
+        return "Implement backend application logic with Java classes, services, and persistence layers."
+    if project_type_label == "Android application":
+        return "Deliver a native Android application with activities, fragments, and Android SDK integrations."
+    if project_type_label == "Laravel web application":
+        return "Build a full-stack web application using Laravel controllers, models, migrations, and Blade views."
     if project_type_label == "Backend API service":
         return "Expose backend endpoints and supporting application services through API-oriented modules."
     if project_type_label == "Frontend web application":
         return "Deliver a browser-based application with component-driven frontend flows."
     if project_type_label == "PHP CRUD web application":
         return "Manage records through routed pages, forms, and persistence-oriented PHP modules."
-    if project_type_label == "Python application" and domain_label == "education":
-        return "Support education-related workflows with Python application modules and domain operations."
+    if project_type_label == "Rust application":
+        return "Implement a performant systems, desktop, or CLI application using Rust modules and Cargo packages."
+    if project_type_label == "Go application":
+        return "Deliver efficient backend services or tooling using Go packages and module-based organization."
+    if project_type_label == ".NET application":
+        return "Build application functionality using C# and the .NET runtime with NuGet-managed dependencies."
     return "Organize project structure and expose the most relevant code paths for developer workflows."
 
 
@@ -2108,10 +2621,19 @@ def detect_project_fingerprint(
             push(runtime, "Node.js")
             push(runtime, "Browser")
             note("`package.json` includes `next`.", "project_type")
+        if "nuxt" in deps or any(name.startswith("nuxt.config.") for name in lower_names):
+            push(frameworks, "Nuxt")
+            push(runtime, "Node.js")
+            push(runtime, "Browser")
+            note("`package.json` or `nuxt.config` indicates a Nuxt application.", "project_type")
         if "react" in deps:
             push(frameworks, "React")
             push(runtime, "Browser")
             note("`package.json` includes `react`.", "project_type")
+        if "@angular/core" in deps or "angular.json" in lower_names:
+            push(frameworks, "Angular")
+            push(runtime, "Browser")
+            note("Angular workspace files or dependencies were detected.", "project_type")
         if "vue" in deps:
             push(frameworks, "Vue")
             push(runtime, "Browser")
@@ -2120,6 +2642,16 @@ def detect_project_fingerprint(
             push(frameworks, "Svelte/SvelteKit")
             push(runtime, "Browser")
             note("`package.json` includes Svelte dependencies.")
+        if "@remix-run/dev" in deps or any(name.startswith("remix.config.") for name in lower_names):
+            push(frameworks, "Remix")
+            push(runtime, "Node.js")
+            push(runtime, "Browser")
+            note("Remix dependencies or config files were detected.", "project_type")
+        if "astro" in deps or any(name.startswith("astro.config.") for name in lower_names):
+            push(frameworks, "Astro")
+            push(runtime, "Node.js")
+            push(runtime, "Browser")
+            note("Astro dependencies or config files were detected.", "project_type")
         if "vite" in deps or any(name.startswith("vite.config.") for name in lower_names):
             push(build_tools, "Vite")
             note("Vite config or dependency was detected.")
@@ -2132,6 +2664,16 @@ def detect_project_fingerprint(
         if "firebase" in deps:
             push(build_tools, "Firebase")
             note("`package.json` includes `firebase`.")
+        if "@nestjs/core" in deps or "@nestjs/common" in deps:
+            push(frameworks, "NestJS")
+            push(runtime, "Node.js")
+            push(runtime, "Server")
+            note("`package.json` includes NestJS core dependencies.", "project_type")
+        if "electron" in deps or "electron-builder" in deps:
+            push(frameworks, "Electron")
+            push(runtime, "Node.js")
+            push(runtime, "Desktop GUI")
+            note("`package.json` includes Electron dependencies.", "project_type")
 
     if "composer.json" in by_name:
         source("composer.json")
@@ -2151,6 +2693,47 @@ def detect_project_fingerprint(
             push(build_tools, "Illuminate Database")
             note("`composer.json` includes `illuminate/database`.")
 
+    if "gemfile" in by_name:
+        source("Gemfile")
+        deps = get_dependency_names(by_name["gemfile"])
+        dependency_names.update(deps)
+        push(package_managers, "Bundler")
+        push(runtime, "Ruby")
+        language_scores["ruby"] += 10.0
+        note("`Gemfile` defines the Ruby dependency graph.", "project_type")
+        if "rails" in deps or "config/routes.rb" in by_rel or "bin/rails" in by_rel:
+            push(frameworks, "Rails")
+            push(runtime, "Server")
+            note("Rails structure was detected from `Gemfile`, `config/routes.rb`, or `bin/rails`.", "project_type")
+
+    if "mix.exs" in by_name:
+        source("mix.exs")
+        deps = get_dependency_names(by_name["mix.exs"])
+        dependency_names.update(deps)
+        push(package_managers, "Mix")
+        push(runtime, "BEAM")
+        language_scores["elixir"] += 10.0
+        note("`mix.exs` defines the Elixir application and dependency graph.", "project_type")
+        if "phoenix" in deps or any(path.endswith("/router.ex") for path in by_rel):
+            push(frameworks, "Phoenix")
+            push(runtime, "Server")
+            note("Phoenix router or dependencies were detected.", "project_type")
+
+    if "pubspec.yaml" in by_name or "pubspec.yml" in by_name:
+        pubspec_item = by_name.get("pubspec.yaml") or by_name.get("pubspec.yml")
+        if pubspec_item:
+            source(pubspec_item.path.name)
+            deps = get_dependency_names(pubspec_item)
+            dependency_names.update(deps)
+            push(package_managers, "pub")
+            push(runtime, "Dart")
+            language_scores["dart"] += 10.0
+            note("`pubspec.yaml` defines Dart or Flutter package metadata.", "project_type")
+            if "flutter" in deps or "flutter:" in pubspec_item.content.lower() or "lib/main.dart" in by_rel:
+                push(frameworks, "Flutter")
+                push(runtime, "Mobile")
+                note("Flutter project structure was detected from `pubspec.yaml` or `lib/main.dart`.", "project_type")
+
     if "requirements.txt" in by_name:
         source("requirements.txt")
         deps = parse_requirements_dependencies(by_name["requirements.txt"].content)
@@ -2166,11 +2749,30 @@ def detect_project_fingerprint(
         if "django" in deps:
             push(frameworks, "Django")
             push(runtime, "Server")
-            note("`requirements.txt` includes `django`.")
+            note("`requirements.txt` includes `django`.", "project_type")
+        if "djangorestframework" in deps or "django-rest-framework" in deps:
+            push(frameworks, "Django REST Framework")
+            push(runtime, "Server")
+            note("`requirements.txt` includes Django REST Framework.", "project_type")
+        if "channels" in deps:
+            push(build_tools, "Django Channels")
+            note("`requirements.txt` includes Django Channels (WebSocket support).")
+        if "celery" in deps:
+            push(build_tools, "Celery")
+            note("`requirements.txt` includes Celery (async task queue).")
         if "flask" in deps:
             push(frameworks, "Flask")
             push(runtime, "Server")
-            note("`requirements.txt` includes `flask`.")
+            note("`requirements.txt` includes `flask`.", "project_type")
+        if "flask-restful" in deps or "flask-restx" in deps or "flasgger" in deps:
+            push(build_tools, "Flask REST extension")
+            note("`requirements.txt` includes a Flask REST extension.")
+        if "sqlalchemy" in deps:
+            push(build_tools, "SQLAlchemy")
+            note("`requirements.txt` includes SQLAlchemy ORM.")
+        if "alembic" in deps:
+            push(build_tools, "Alembic migrations")
+            note("`requirements.txt` includes Alembic database migrations.")
         if "pyinstaller" in deps:
             push(build_tools, "PyInstaller")
             note("`requirements.txt` includes `pyinstaller`.")
@@ -2191,57 +2793,202 @@ def detect_project_fingerprint(
         if "fastapi" in deps:
             push(frameworks, "FastAPI")
             push(runtime, "Server")
-            note("`pyproject.toml` includes `fastapi`.")
+            note("`pyproject.toml` includes `fastapi`.", "project_type")
         if "django" in deps:
             push(frameworks, "Django")
             push(runtime, "Server")
-            note("`pyproject.toml` includes `django`.")
+            note("`pyproject.toml` includes `django`.", "project_type")
+        if "djangorestframework" in deps or "django-rest-framework" in deps:
+            push(frameworks, "Django REST Framework")
+            push(runtime, "Server")
+            note("`pyproject.toml` includes Django REST Framework.", "project_type")
         if "flask" in deps:
             push(frameworks, "Flask")
             push(runtime, "Server")
-            note("`pyproject.toml` includes `flask`.")
+            note("`pyproject.toml` includes `flask`.", "project_type")
+        if "sqlalchemy" in deps:
+            push(build_tools, "SQLAlchemy")
+            note("`pyproject.toml` includes SQLAlchemy ORM.")
+        if "celery" in deps:
+            push(build_tools, "Celery")
+            note("`pyproject.toml` includes Celery (async task queue).")
         if "pyinstaller" in deps:
             push(build_tools, "PyInstaller")
             note("`pyproject.toml` includes `pyinstaller`.")
 
     if "cargo.toml" in by_name:
         source("Cargo.toml")
-        dependency_names.update(get_dependency_names(by_name["cargo.toml"]))
+        cargo_deps = get_dependency_names(by_name["cargo.toml"])
+        dependency_names.update(cargo_deps)
         for script in parse_manifest_scripts(by_name["cargo.toml"]):
             push(scripts, script)
         push(package_managers, "Cargo")
         push(runtime, "Rust")
         language_scores["rust"] += 10.0
         note("`Cargo.toml` defines the Rust package manifest.")
+        if "actix-web" in cargo_deps:
+            push(frameworks, "Actix Web")
+            push(runtime, "Server")
+            note("`Cargo.toml` includes `actix-web`.", "project_type")
+        if "axum" in cargo_deps:
+            push(frameworks, "Axum")
+            push(runtime, "Server")
+            note("`Cargo.toml` includes `axum`.", "project_type")
+        if "rocket" in cargo_deps:
+            push(frameworks, "Rocket")
+            push(runtime, "Server")
+            note("`Cargo.toml` includes `rocket`.", "project_type")
+        if "tauri" in cargo_deps:
+            push(frameworks, "Tauri")
+            push(runtime, "Desktop GUI")
+            note("`Cargo.toml` includes `tauri`.")
+        if "clap" in cargo_deps:
+            push(build_tools, "Clap CLI")
+            note("`Cargo.toml` includes `clap`.")
 
     if "go.mod" in by_name:
         source("go.mod")
-        dependency_names.update(get_dependency_names(by_name["go.mod"]))
+        go_deps = get_dependency_names(by_name["go.mod"])
+        dependency_names.update(go_deps)
         push(package_managers, "Go modules")
         push(runtime, "Go")
         language_scores["go"] += 10.0
         note("`go.mod` defines the Go module graph.")
+        if any(dep in go_deps for dep in {"github.com/gin-gonic/gin", "gin"}):
+            push(frameworks, "Gin")
+            push(runtime, "Server")
+            note("`go.mod` includes Gin router dependencies.", "project_type")
+        if any(dep in go_deps for dep in {"github.com/gofiber/fiber", "fiber"}):
+            push(frameworks, "Fiber")
+            push(runtime, "Server")
+            note("`go.mod` includes Fiber router dependencies.", "project_type")
+        if any(dep in go_deps for dep in {"github.com/labstack/echo", "echo"}):
+            push(frameworks, "Echo")
+            push(runtime, "Server")
+            note("`go.mod` includes Echo router dependencies.", "project_type")
+        if any(dep in go_deps for dep in {"github.com/spf13/cobra", "cobra"}):
+            push(build_tools, "Cobra CLI")
+            note("`go.mod` includes Cobra CLI tooling.")
 
     for name in lower_names:
         if name.endswith(".csproj"):
             source(name)
+            csproj_deps = get_dependency_names(by_name[name])
+            dependency_names.update(csproj_deps)
             for script in parse_manifest_scripts(by_name[name]):
                 push(scripts, script)
             push(package_managers, "NuGet")
             push(runtime, ".NET")
             language_scores["csharp"] += 10.0
             note(f"`{name}` defines a .NET project.")
+            if any(dep.startswith("microsoft.aspnetcore") for dep in csproj_deps) or "webapplication.createbuilder" in content_blob:
+                push(frameworks, "ASP.NET Core")
+                push(runtime, "Server")
+                note(f"`{name}` includes ASP.NET Core dependencies.", "project_type")
+            csproj_content = by_name[name].content.lower()
+            if "<usewpf>true</usewpf>" in csproj_content or "<usewindowsforms>true</usewindowsforms>" in csproj_content:
+                push(frameworks, ".NET desktop UI")
+                push(runtime, "Desktop GUI")
+                note(f"`{name}` enables desktop UI build settings.")
             break
 
     if "pom.xml" in lower_names:
         source("pom.xml")
-        dependency_names.update(get_dependency_names(by_name["pom.xml"]))
+        pom_deps = get_dependency_names(by_name["pom.xml"])
+        dependency_names.update(pom_deps)
         for script in parse_manifest_scripts(by_name["pom.xml"]):
             push(scripts, script)
         push(package_managers, "Maven")
         push(runtime, "JVM")
         language_scores["java"] += 10.0
         note("`pom.xml` defines the Maven build graph.")
+        if any(dep.startswith("spring-boot") for dep in pom_deps):
+            push(frameworks, "Spring Boot")
+            push(runtime, "Server")
+            note("`pom.xml` includes Spring Boot dependencies.", "project_type")
+        elif any(dep in pom_deps for dep in {"spring-core", "spring-web", "spring-webmvc", "spring-context"}):
+            push(frameworks, "Spring Framework")
+            push(runtime, "Server")
+            note("`pom.xml` includes Spring Framework dependencies.", "project_type")
+        if any(dep in pom_deps for dep in {"hibernate-core", "spring-data-jpa", "spring-boot-starter-data-jpa", "jakarta.persistence-api"}):
+            push(build_tools, "JPA/Hibernate")
+            note("`pom.xml` includes JPA/Hibernate persistence.", "project_type")
+
+    for gradle_name in ("build.gradle", "build.gradle.kts"):
+        if gradle_name in lower_names:
+            source(gradle_name)
+            gradle_content = by_name[gradle_name].content.lower()
+            gradle_deps = get_dependency_names(by_name[gradle_name])
+            dependency_names.update(gradle_deps)
+            for script in parse_manifest_scripts(by_name[gradle_name]):
+                push(scripts, script)
+            push(package_managers, "Gradle")
+            push(runtime, "JVM")
+            language_scores["java"] += 10.0
+            note(f"`{gradle_name}` defines a Gradle build.", "project_type")
+            if "org.springframework.boot" in gradle_content or "spring-boot-starter" in gradle_content or any(dep.startswith("org.springframework.boot:spring-boot") or dep.startswith("spring-boot-starter") for dep in gradle_deps):
+                push(frameworks, "Spring Boot")
+                push(runtime, "Server")
+                note("`build.gradle` includes Spring Boot plugin.", "project_type")
+            elif "springframework" in gradle_content or any(dep.startswith("org.springframework") for dep in gradle_deps):
+                push(frameworks, "Spring Framework")
+                push(runtime, "Server")
+                note("`build.gradle` includes Spring Framework.", "project_type")
+            if "com.android.application" in gradle_content or "com.android.library" in gradle_content:
+                push(frameworks, "Android SDK")
+                push(runtime, "Android")
+                note("`build.gradle` defines an Android application.", "project_type")
+            if "hibernate" in gradle_content or "jpa" in gradle_content or any(dep.endswith(":hibernate-core") or dep.endswith(":spring-data-jpa") or dep.endswith(":spring-boot-starter-data-jpa") for dep in gradle_deps):
+                push(build_tools, "JPA/Hibernate")
+            break
+
+    if "manage.py" in lower_names:
+        source("manage.py")
+        if "Django" not in frameworks:
+            push(frameworks, "Django")
+            push(runtime, "Server")
+            language_scores["python"] += 6.0
+            note("`manage.py` Django management script was detected.", "project_type")
+    if {"settings.py", "urls.py"} & lower_names:
+        if "Django" not in frameworks and any(name in lower_names for name in {"settings.py", "urls.py", "wsgi.py", "asgi.py"}):
+            push(frameworks, "Django")
+            push(runtime, "Server")
+            language_scores["python"] += 4.0
+            note("Django structure was inferred from settings, URL routing, or WSGI/ASGI files.", "project_type")
+        if "settings.py" in lower_names:
+            source("settings.py")
+        if "urls.py" in lower_names:
+            source("urls.py")
+
+    if "@app.route" in content_blob or "flask(" in content_blob or "blueprint(" in content_blob:
+        if "Flask" not in frameworks:
+            push(frameworks, "Flask")
+            push(runtime, "Server")
+            language_scores["python"] += 4.0
+            note("Flask route decorators or Blueprint patterns were detected.", "project_type")
+
+    if "program.cs" in lower_names:
+        source("Program.cs")
+    if "appsettings.json" in lower_names:
+        source("appsettings.json")
+        if "ASP.NET Core" not in frameworks and ("webapplication.createbuilder" in content_blob or "mapcontrollers()" in content_blob):
+            push(frameworks, "ASP.NET Core")
+            push(runtime, "Server")
+            note("Program.cs and appsettings.json suggest an ASP.NET Core application.", "project_type")
+
+    if "@springbootapplication" in content_blob or "@restcontroller" in content_blob:
+        if "Spring Boot" not in frameworks and "Spring Framework" not in frameworks:
+            push(frameworks, "Spring Boot")
+            push(runtime, "Server")
+            language_scores["java"] += 4.0
+            note("Spring Boot annotations were detected in Java source files.", "project_type")
+
+    if any("androidmanifest.xml" == name for name in lower_names):
+        source("AndroidManifest.xml")
+        if "Android SDK" not in frameworks:
+            push(frameworks, "Android SDK")
+            push(runtime, "Android")
+            note("`AndroidManifest.xml` was detected.", "project_type")
 
     if any("tkinter" in item.content.lower() for item in insights if item.lang == "python"):
         push(frameworks, "Tkinter")
@@ -2262,9 +3009,13 @@ def detect_project_fingerprint(
     for name in sorted(lower_names):
         if name.startswith("next.config."):
             source(name)
+        elif name.startswith("nuxt.config."):
+            source(name)
         elif name.startswith("vite.config."):
             source(name)
-        elif name in {"tsconfig.json", "dockerfile", ".env.example"}:
+        elif name.startswith("astro.config.") or name.startswith("remix.config."):
+            source(name)
+        elif name in {"tsconfig.json", "dockerfile", ".env.example", "application.properties", "application.yml", "application.yaml", "main.go", "main.rs", "angular.json", "gemfile", "pubspec.yaml", "pubspec.yml"}:
             source(name)
 
     if "app" in lower_dirs:
@@ -2277,6 +3028,16 @@ def detect_project_fingerprint(
         source("lib/")
     if "routes" in lower_dirs:
         source("routes/")
+    if "config" in lower_dirs and any(path.startswith("config/routes.rb") for path in by_rel):
+        source("config/routes.rb")
+    if "cmd" in lower_dirs:
+        source("cmd/")
+    if any(path.startswith("src/main/java/") for path in by_rel):
+        source("src/main/java/")
+    if any(path.startswith("src/test/java/") for path in by_rel):
+        source("src/test/java/")
+    if any(path.startswith("lib/main.dart") for path in by_rel):
+        source("lib/main.dart")
     if "tests" in lower_dirs:
         source("tests/")
 
@@ -2310,18 +3071,50 @@ def detect_project_fingerprint(
     elif not project_type:
         if "Laravel" in frameworks:
             project_type = "Laravel web application"
+        elif "Rails" in frameworks:
+            project_type = "Ruby on Rails application"
+        elif "Phoenix" in frameworks:
+            project_type = "Phoenix web application"
+        elif "Flutter" in frameworks:
+            project_type = "Flutter application"
+        elif "Electron" in frameworks:
+            project_type = "Electron desktop application"
         elif "FastAPI" in frameworks:
             project_type = "Backend API service"
         elif "Django" in frameworks:
             project_type = "Django web application"
         elif "Flask" in frameworks:
-            project_type = "Python web application"
+            project_type = "Flask web application"
+        elif "NestJS" in frameworks:
+            project_type = "Backend API service"
+        elif "ASP.NET Core" in frameworks:
+            project_type = "ASP.NET Core application"
+        elif "Spring Boot" in frameworks:
+            project_type = "Spring Boot application"
+        elif "Spring Framework" in frameworks:
+            project_type = "Spring web application"
+        elif "Android SDK" in frameworks:
+            project_type = "Android application"
+        elif any(framework in frameworks for framework in {"Nuxt", "Angular", "Astro", "Remix"}):
+            project_type = "Frontend web application"
+        elif any(framework in frameworks for framework in {"Gin", "Fiber", "Echo"}):
+            project_type = "Go application"
+        elif any(framework in frameworks for framework in {"Actix Web", "Axum", "Rocket"}):
+            project_type = "Rust application"
+        elif "java" in language_scores and ("Maven" in package_managers or "Gradle" in package_managers):
+            project_type = "Java application"
         elif "php" in language_scores and "Composer" in package_managers:
             project_type = "PHP application"
         elif "typescript" in language_scores or "javascript" in language_scores:
             project_type = "JavaScript/TypeScript application"
         elif "python" in language_scores:
             project_type = "Python application"
+        elif "rust" in language_scores:
+            project_type = "Rust application"
+        elif "go" in language_scores:
+            project_type = "Go application"
+        elif "csharp" in language_scores:
+            project_type = ".NET application"
         else:
             project_type = "Developer-facing software project"
 
@@ -2394,7 +3187,7 @@ def detect_project_fingerprint(
 
 def normalize_supporting_technologies(raw: list[str]) -> list[str]:
     replacements = {
-        "pip-style requirements": "Python standard library",
+        "pip-style requirements": "pip requirements workflow",
         "desktop gui runtime": "Tkinter desktop interface",
         "desktop gui interface": "Tkinter desktop interface",
         "cli workflow": "CLI workflow",
@@ -2405,6 +3198,9 @@ def normalize_supporting_technologies(raw: list[str]) -> list[str]:
         "yarn": "Yarn-based workflow",
         "pyproject-based python packaging": "pyproject packaging workflow",
         "css": "CSS styling layer",
+        "mix": "Mix build workflow",
+        "pub": "pub package workflow",
+        "bundler": "Bundler workflow",
     }
     normalized: list[str] = []
     seen: set[str] = set()
@@ -2435,7 +3231,7 @@ def detect_supporting_technologies(insights: list[FileInsight], fingerprint: Pro
     if "CLI" in fingerprint.runtime:
         push("CLI workflow")
     for manager in fingerprint.package_managers:
-        if manager in {"Composer", "Poetry", "Cargo", "Go modules", "NuGet", "Maven"}:
+        if manager in {"Composer", "Poetry", "Cargo", "Go modules", "NuGet", "Maven", "Gradle", "Bundler", "Mix", "pub"}:
             push(manager)
     for entry in fingerprint.build_tools:
         push(entry)
@@ -2665,11 +3461,22 @@ def prioritize_evidence_sources(sources: list[str]) -> list[str]:
     priority = {
         "package.json": 0,
         "composer.json": 0,
+        "gemfile": 0,
         "pyproject.toml": 0,
         "requirements.txt": 0,
         "cargo.toml": 0,
         "go.mod": 0,
         "pom.xml": 0,
+        "build.gradle": 0,
+        "build.gradle.kts": 0,
+        "mix.exs": 0,
+        "pubspec.yaml": 0,
+        "pubspec.yml": 0,
+        "program.cs": 1,
+        "appsettings.json": 2,
+        "manage.py": 3,
+        "settings.py": 4,
+        "urls.py": 5,
         "contexta.py": 5,
         "ui.py": 6,
         "cli.py": 7,
@@ -2682,11 +3489,22 @@ def prioritize_evidence_sources(sources: list[str]) -> list[str]:
         "vite.config.ts": 12,
         "vite.config.js": 12,
         "tsconfig.json": 13,
+        "angular.json": 13,
+        "config/routes.rb": 14,
+        "application.properties": 14,
+        "application.yml": 14,
+        "application.yaml": 14,
+        "main.go": 15,
+        "main.rs": 15,
+        "lib/main.dart": 15,
         "app/": 20,
         "pages/": 21,
         "components/": 22,
         "lib/": 23,
         "routes/": 24,
+        "cmd/": 25,
+        "src/main/java/": 26,
+        "src/test/java/": 27,
         "tests/": 90,
     }
     deduped: list[str] = []
@@ -2726,6 +3544,32 @@ def build_project_summary_intro(project_path: Path, fingerprint: ProjectFingerpr
         return f"`{project_path.name}` looks like a desktop GUI + CLI developer tool built around repository analysis and export workflows."
     if project_type == "Backend API service":
         return f"`{project_path.name}` looks like a backend API service built around routes, services, and integration-heavy modules."
+    if project_type == "Django web application":
+        return f"`{project_path.name}` looks like a Django web application built around models, routes, templates, and server-side workflows."
+    if project_type == "Flask web application":
+        return f"`{project_path.name}` looks like a Flask web application built around lightweight routes, services, and Python-backed flows."
+    if project_type == "Spring Boot application":
+        return f"`{project_path.name}` looks like a Spring Boot application built around controllers, services, repositories, and JVM-based backend flows."
+    if project_type == "ASP.NET Core application":
+        return f"`{project_path.name}` looks like an ASP.NET Core application built around controllers, middleware, and service-oriented backend flows."
+    if project_type == "Ruby on Rails application":
+        return f"`{project_path.name}` looks like a Ruby on Rails application built around routes, controllers, models, and convention-driven server rendering."
+    if project_type == "Phoenix web application":
+        return f"`{project_path.name}` looks like a Phoenix web application built around routers, controllers, and Elixir-backed web flows."
+    if project_type == "Flutter application":
+        return f"`{project_path.name}` looks like a Flutter application built around Dart widgets, screens, and cross-platform UI flows."
+    if project_type == "Electron desktop application":
+        return f"`{project_path.name}` looks like an Electron desktop application built around main-process orchestration and renderer-driven UI flows."
+    if project_type == "Laravel web application":
+        return f"`{project_path.name}` looks like a Laravel web application built around routes, controllers, models, and full-stack server-rendered flows."
+    if project_type == "Go application":
+        return f"`{project_path.name}` looks like a Go application built around module-based services, handlers, or CLI-oriented packages."
+    if project_type == "Rust application":
+        return f"`{project_path.name}` looks like a Rust application built around Cargo-managed crates, modules, and performance-oriented workflows."
+    if project_type == "Java application":
+        return f"`{project_path.name}` looks like a Java application built around JVM services, domain logic, and build-managed modules."
+    if project_type == "Android application":
+        return f"`{project_path.name}` looks like an Android application built around manifests, resources, and mobile runtime components."
     if "library" in project_type.lower() or "package" in project_type.lower():
         return f"`{project_path.name}` looks like a reusable library/package with exported modules and supporting configuration."
     return f"`{project_path.name}` looks like a {project_type}."
@@ -2757,6 +3601,32 @@ def build_architecture_overview(
         lines.append(f"This project appears to be a desktop GUI + CLI developer tool written primarily in {primary}, with scanning, analysis, and export workflows.")
     elif project_type == "Backend API service":
         lines.append(f"This project appears to be a backend API service written primarily in {primary}, with route, service, and integration layers.")
+    elif project_type == "Django web application":
+        lines.append(f"This project appears to be a Django web application written primarily in {primary}, with models, routes, templates, and server-side workflows.")
+    elif project_type == "Flask web application":
+        lines.append(f"This project appears to be a Flask web application written primarily in {primary}, with lightweight routes and Python-backed application logic.")
+    elif project_type == "Spring Boot application":
+        lines.append(f"This project appears to be a Spring Boot application written primarily in {primary}, with controllers, services, repositories, and JVM server flows.")
+    elif project_type == "ASP.NET Core application":
+        lines.append(f"This project appears to be an ASP.NET Core application written primarily in {primary}, with controllers, middleware, and service-oriented backend flows.")
+    elif project_type == "Ruby on Rails application":
+        lines.append(f"This project appears to be a Ruby on Rails application written primarily in {primary}, with routes, controllers, models, and convention-driven server rendering.")
+    elif project_type == "Phoenix web application":
+        lines.append(f"This project appears to be a Phoenix web application written primarily in {primary}, with routers, controllers, and Elixir-backed web flows.")
+    elif project_type == "Flutter application":
+        lines.append(f"This project appears to be a Flutter application written primarily in {primary}, with widgets, screens, and cross-platform runtime integrations.")
+    elif project_type == "Electron desktop application":
+        lines.append(f"This project appears to be an Electron desktop application written primarily in {primary}, with main-process orchestration and renderer-based UI flows.")
+    elif project_type == "Laravel web application":
+        lines.append(f"This project appears to be a Laravel web application written primarily in {primary}, with routes, controllers, models, and full-stack web flows.")
+    elif project_type == "Go application":
+        lines.append(f"This project appears to be a Go application written primarily in {primary}, with module-based services, handlers, or CLI-oriented entry flows.")
+    elif project_type == "Rust application":
+        lines.append(f"This project appears to be a Rust application written primarily in {primary}, with Cargo-managed crates and performance-oriented modules.")
+    elif project_type == "Java application":
+        lines.append(f"This project appears to be a Java application written primarily in {primary}, with JVM services, build-managed modules, and domain logic.")
+    elif project_type == "Android application":
+        lines.append(f"This project appears to be an Android application written primarily in {primary}, with manifests, resources, and mobile runtime components.")
     else:
         lines.append(f"This project appears to be a {project_type} written primarily in {primary}.")
 
@@ -2855,6 +3725,291 @@ def has_related_project_test(item: FileInsight, tests: list[FileInsight]) -> boo
     return False
 
 
+def project_stack_tokens(fingerprint: ProjectFingerprint | None) -> set[str]:
+    if not fingerprint:
+        return set()
+    tokens: set[str] = set()
+    for value in [fingerprint.primary_language or "", fingerprint.project_type or ""]:
+        tokens.update(re.findall(r"[a-z0-9]+", value.lower()))
+    for bucket in (
+        fingerprint.frameworks,
+        fingerprint.runtime,
+        fingerprint.package_managers,
+        fingerprint.build_tools,
+        fingerprint.main_dependencies,
+    ):
+        for value in bucket:
+            tokens.update(re.findall(r"[a-z0-9]+", value.lower()))
+    return tokens
+
+
+def is_dependency_manifest_surface(item: FileInsight) -> bool:
+    _weight, label = identity_weight_for(item)
+    if not label:
+        return False
+    lowered = label.lower()
+    return any(token in lowered for token in ("manifest", "workspace", "build manifest", "module manifest", "project manifest"))
+
+
+def is_runtime_config_surface(item: FileInsight) -> bool:
+    rel = f"/{item.relpath.as_posix().lower()}"
+    name = item.path.name.lower()
+    _weight, label = identity_weight_for(item)
+    lowered = (label or "").lower()
+    if any(token in lowered for token in ("config", "settings", "routing", "management", "compiler")):
+        return True
+    if any(
+        token in rel
+        for token in (
+            "/config/",
+            "/configs/",
+            "/settings/",
+            "/environments/",
+            "/resources/",
+            "/properties/",
+            "/routes/",
+        )
+    ):
+        return True
+    return name in {
+        ".env",
+        ".env.example",
+        "manage.py",
+        "program.cs",
+        "appsettings.json",
+        "application.properties",
+        "application.yml",
+        "application.yaml",
+        "angular.json",
+        "androidmanifest.xml",
+        "router.ex",
+        "urls.py",
+        "settings.py",
+        "config/routes.rb",
+    }
+
+
+def is_schema_surface(item: FileInsight, fingerprint: ProjectFingerprint | None = None) -> bool:
+    rel = f"/{item.relpath.as_posix().lower()}"
+    name = item.path.name.lower()
+    content = item.content.lower()
+    stack = project_stack_tokens(fingerprint)
+
+    if any(
+        token in rel
+        for token in (
+            "/migrations/",
+            "/migration/",
+            "/db/migrate/",
+            "/alembic/",
+            "schema.prisma",
+            "schema.sql",
+            "schema.rb",
+            "/entities/",
+            "/entity/",
+        )
+    ):
+        return True
+    if name in {"models.py", "schema.prisma", "schema.sql", "schema.rb"}:
+        return True
+    if any(token in content for token in ("create table", "alter table", "drop table", "modelbuilder.entity", "db_table")):
+        return True
+    if "django" in stack and rel.endswith("/models.py"):
+        return True
+    if ("rails" in stack or "laravel" in stack or "spring" in stack or "asp" in stack) and any(
+        token in rel for token in ("/models/", "/entities/", "/entity/")
+    ):
+        return True
+    return False
+
+
+def is_user_facing_surface(item: FileInsight, fingerprint: ProjectFingerprint | None = None) -> bool:
+    rel = f"/{item.relpath.as_posix().lower()}"
+    name = item.path.name.lower()
+    stack = project_stack_tokens(fingerprint)
+
+    if rel.endswith(("/page.tsx", "/page.jsx", "/page.vue", "/page.svelte", "/index.php")):
+        return True
+    if any(token in rel for token in ("/templates/", "/screens/", "/screen/", "/activities/", "/fragments/", "/views/")):
+        return True
+    if "flutter" in stack and any(token in rel for token in ("/screens/", "/pages/", "/widgets/")):
+        return True
+    if "android" in stack and any(token in name for token in ("activity", "fragment")):
+        return True
+    return False
+
+
+def is_request_boundary_surface(item: FileInsight, fingerprint: ProjectFingerprint | None = None) -> bool:
+    rel = f"/{item.relpath.as_posix().lower()}"
+    name = item.path.name.lower()
+    content = item.content.lower()
+
+    if is_user_facing_surface(item, fingerprint):
+        return True
+    if any(
+        token in rel
+        for token in (
+            "/controllers/",
+            "/controller/",
+            "/handlers/",
+            "/handler/",
+            "/routes/",
+            "/router",
+            "/api/",
+            "/middleware/",
+            "/views.py",
+            "/live/",
+            "/endpoints/",
+        )
+    ):
+        return True
+    if any(token in name for token in ("controller", "handler", "middleware", "router", "endpoint")):
+        return True
+    boundary_patterns = (
+        "@app.route",
+        "@router.",
+        "@getmapping",
+        "@postmapping",
+        "@putmapping",
+        "@patchmapping",
+        "@deletemapping",
+        "@requestmapping",
+        "[httpget]",
+        "[httppost]",
+        "[httpput]",
+        "[httppatch]",
+        "[httpdelete]",
+        "router.get(",
+        "router.post(",
+        "router.put(",
+        "router.patch(",
+        "app.get(",
+        "app.post(",
+        "app.put(",
+        "mapget(",
+        "mappost(",
+        "httphandlefunc(",
+        "gin.context",
+        "echo.context",
+        "fiber.ctx",
+    )
+    return any(pattern in content for pattern in boundary_patterns)
+
+
+def is_runtime_entry_surface(item: FileInsight, fingerprint: ProjectFingerprint | None = None) -> bool:
+    name = item.path.name.lower()
+    if name in {"main.py", "app.py", "server.py", "manage.py", "program.cs", "main.go", "main.rs", "main.dart", "contexta.py"}:
+        return True
+    if item.path.stem.lower() in {"main", "app", "server"} and len(item.relpath.parts) <= 2:
+        return True
+    return "entrypoint" in item.tags and not is_user_facing_surface(item, fingerprint)
+
+
+def is_shared_state_surface(item: FileInsight, fingerprint: ProjectFingerprint | None = None) -> bool:
+    rel = f"/{item.relpath.as_posix().lower()}"
+    name = item.path.name.lower()
+    content = item.content.lower()
+    role = (item.summary or infer_file_role(item, fingerprint.project_type if fingerprint else None)).lower()
+
+    path_tokens = ("auth", "locale", "translation", "translations", "provider", "context", "store", "state", "reducer", "session")
+    if any(token in rel for token in path_tokens):
+        return True
+    if any(token in name for token in ("provider", "context", "store", "reducer")):
+        return True
+    if any(token in role for token in ("translation hooks", "localization", "authentication state", "shared state", "shared behavior")):
+        return True
+    if any(token in content for token in ("createcontext", "usecontext", "configureservices(", "configure<", "provide(", "inject(")):
+        return True
+    return False
+
+
+def looks_like_input_flow(item: FileInsight) -> bool:
+    path = f"/{item.relpath.as_posix().lower()}"
+    content = item.content.lower()
+    path_submission_hint = any(
+        token in path
+        for token in (
+            "/form",
+            "/contact",
+            "/checkout",
+            "/register",
+            "/signup",
+            "/salvar",
+            "/save",
+            "/submit",
+            "/create",
+            "/edit",
+            "/update",
+            "/store",
+        )
+    )
+    content_submission_hint = any(
+        token in content
+        for token in (
+            "<form",
+            "onsubmit",
+            "handlechange",
+            "react-hook-form",
+            "formik",
+            "request.method == 'post'",
+            'request.method == "post"',
+            "request.post",
+            "request.form",
+            "$_post",
+            "@postmapping",
+            "[httppost]",
+            "router.post(",
+            "app.post(",
+            "mappost(",
+            "validate(",
+            "savechanges(",
+            "db.session.commit",
+        )
+    )
+    return path_submission_hint or content_submission_hint
+
+
+def is_background_coordination_surface(item: FileInsight) -> bool:
+    rel = f"/{item.relpath.as_posix().lower()}"
+    content = item.content.lower()
+    if any(token in rel for token in ("/jobs/", "/job/", "/workers/", "/worker/", "/tasks/", "/task/", "/queue/", "/scheduler/")):
+        return True
+    return any(
+        token in content
+        for token in (
+            "threading",
+            "asyncio",
+            "subprocess",
+            "celery",
+            "sidekiq",
+            "backgroundservice",
+            "task.run(",
+            "scheduler",
+            "cron",
+            "queue",
+            "worker",
+            "go func(",
+            "tokio::spawn",
+            "processbuilder(",
+        )
+    )
+
+
+def is_public_api_surface(item: FileInsight, fingerprint: ProjectFingerprint | None = None) -> bool:
+    if not fingerprint or not fingerprint.project_type or not any(
+        token in fingerprint.project_type.lower() for token in ("library", "package")
+    ):
+        return False
+    rel = item.relpath.as_posix().lower()
+    name = item.path.name.lower()
+    return name in {"__init__.py", "index.ts", "index.js", "index.tsx", "lib.rs", "mod.rs"} or rel in {
+        "src/lib.rs",
+        "src/index.ts",
+        "src/index.js",
+        "src/index.tsx",
+    }
+
+
 def compute_risk_score(
     item: FileInsight,
     all_files: list[FileInsight],
@@ -2865,7 +4020,7 @@ def compute_risk_score(
     risk = RiskInsight()
     path = item.relpath.as_posix().lower()
     content = item.content.lower()
-    role = item.summary.lower()
+    role = (item.summary or infer_file_role(item, fingerprint.project_type if fingerprint else None)).lower()
     tests = [candidate for candidate in all_files if "test" in candidate.tags]
     changed = item.path.resolve() in changed_paths
     dependents = len(reverse_index.get(item.relpath.as_posix(), set()))
@@ -2895,31 +4050,32 @@ def compute_risk_score(
     elif dependents >= 2:
         add(2.0, "used by multiple selected files", "shared_impact")
 
-    if (
-        "entrypoint" in item.tags
-        or path.endswith("/page.tsx")
-        or path.endswith("/page.jsx")
-        or path.endswith("/index.php")
-    ):
+    if is_user_facing_surface(item, fingerprint):
         add(1.5, "user-facing entry flow", "user_flow")
+    elif is_request_boundary_surface(item, fingerprint):
+        add(1.5, "request or routing boundary", "request_boundary")
+    elif is_runtime_entry_surface(item, fingerprint):
+        add(1.5, "runtime entry or bootstrapping surface", "entry_surface")
 
-    path_submission_hint = any(token in path for token in ("/form", "/contact", "/checkout", "/register", "/signup", "/salvar", "/save", "/submit"))
-    content_submission_hint = (
-        "<form" in content
-        or "onsubmit" in content
-        or "handlechange" in content
-        or "request.method == 'post'" in content
-        or "$_post" in content
-        or "htmlspecialchars($_post" in content
-        or "header('location:" in content
-    )
-    if not packaging_helper and (path_submission_hint or content_submission_hint):
+    if not packaging_helper and looks_like_input_flow(item):
         add(2.0, "input or submission flow", "input_flow")
 
-    if any(token in path for token in ("auth", "locale", "translations", "settings", "config")):
+    if is_runtime_config_surface(item):
+        add(2.0, "runtime or environment configuration", "config_surface")
+
+    if is_dependency_manifest_surface(item):
+        add(1.5, "dependency or build surface", "dependency_surface")
+        if changed:
+            add(1.0, "changed dependency or build config", "dependency_surface")
+
+    if is_schema_surface(item, fingerprint):
+        add(2.5, "schema or data model surface", "schema_surface")
+
+    if is_shared_state_surface(item, fingerprint):
         add(2.0, "shared app-wide behavior", "shared_state")
-    elif "translation hooks" in role or "localization" in role:
-        add(2.0, "shared app-wide behavior", "shared_state")
+
+    if is_public_api_surface(item, fingerprint):
+        add(2.0, "public API surface", "public_api")
 
     if (
         "service-layer" in role
@@ -2937,6 +4093,9 @@ def compute_risk_score(
 
     if "embedded_asset" in item.tags:
         add(1.0, "embedded asset payload", "embedded_asset")
+
+    if not packaging_helper and is_background_coordination_surface(item):
+        add(1.5, "background or integration coordination", "async_boundary")
 
     if not packaging_helper and (
         (item.lang in {"tsx", "jsx"} and size >= 220 and ("<" in item.content and ("return (" in content or "return <" in content)))
@@ -3034,6 +4193,30 @@ def build_risks(
                 f"`{item.relpath.as_posix()}` feeds state into multiple routed pages, so changes here can affect several user-facing flows at once."
             )
             break
+
+    schema_candidates = [item for item in scope if "schema_surface" in item.risk_flags]
+    for item in sorted(schema_candidates, key=lambda entry: (-entry.risk_score, entry.relpath.as_posix()))[:2]:
+        risks.append(
+            f"`{item.relpath.as_posix()}` touches schema or data-shape behavior, so regressions here may affect persistence, compatibility, or stored data correctness."
+        )
+
+    config_candidates = [item for item in scope if any(flag in item.risk_flags for flag in ("config_surface", "dependency_surface"))]
+    for item in sorted(config_candidates, key=lambda entry: (-entry.risk_score, entry.relpath.as_posix()))[:2]:
+        risks.append(
+            f"`{item.relpath.as_posix()}` governs runtime or dependency configuration, so small changes here can shift broad application behavior."
+        )
+
+    boundary_candidates = [item for item in scope if any(flag in item.risk_flags for flag in ("request_boundary", "user_flow"))]
+    for item in sorted(boundary_candidates, key=lambda entry: (-entry.risk_score, entry.relpath.as_posix()))[:2]:
+        risks.append(
+            f"`{item.relpath.as_posix()}` sits on an exposed request or user-facing boundary, so regressions here are likely to surface quickly."
+        )
+
+    background_candidates = [item for item in scope if "async_boundary" in item.risk_flags]
+    for item in sorted(background_candidates, key=lambda entry: (-entry.risk_score, entry.relpath.as_posix()))[:2]:
+        risks.append(
+            f"`{item.relpath.as_posix()}` coordinates background, async, or integration-heavy work, which can be harder to verify safely than straight-line code."
+        )
 
     if fingerprint and fingerprint.project_type == "Desktop GUI + CLI developer tool":
         gui_count = sum(1 for item in scope if "ui" in item.tags or "theme" in item.tags)
@@ -3371,6 +4554,12 @@ def select_risk_files(
                 if dependent_item and "docs" not in dependent_item.tags and dependent_item.risk_score >= 2:
                     selected.add(dependent)
                 if len(selected) >= 12:
+                    break
+        if len(selected) < 3:
+            for item in ranked_by_risk[:4]:
+                if "test" not in item.tags and "docs" not in item.tags:
+                    selected.add(item.relpath.as_posix())
+                if len(selected) >= 4:
                     break
     else:
         for item in ranked_by_risk[:10]:

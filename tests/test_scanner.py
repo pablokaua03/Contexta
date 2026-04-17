@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 TEST_TMP_ROOT = Path(__file__).parent / ".tmp"
 TEST_TMP_ROOT.mkdir(exist_ok=True)
 
-from scanner import (
+from contexta_app.scanner import (
     count_files,
     build_tree,
     get_language,

@@ -1,8 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import sys
+from pathlib import Path
 
 IS_WINDOWS = sys.platform.startswith('win')
+ROOT = Path(SPECPATH).resolve().parents[1]
+ICON_PATH = ROOT / 'assets' / 'icon.ico'
+VERSION_PATH = ROOT / 'packaging' / 'version_info.txt'
 
 
 def _trim_tk_payload(datas):
@@ -26,15 +30,15 @@ def _trim_tk_payload(datas):
     return trimmed
 
 a = Analysis(
-    ['contexta.py'],
-    pathex=[],
+    [str(ROOT / 'contexta.py')],
+    pathex=[str(ROOT)],
     binaries=[],
-    datas=[('icon.ico', '.')],
+    datas=[(str(ICON_PATH), '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['brand_assets'],
+    excludes=['brand_assets', 'assets.brand_assets'],
     noarchive=False,
     optimize=0,
 )
@@ -60,6 +64,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version='version_info.txt' if IS_WINDOWS else None,
-    icon=['icon.ico'],
+    version=str(VERSION_PATH) if IS_WINDOWS else None,
+    icon=[str(ICON_PATH)],
 )

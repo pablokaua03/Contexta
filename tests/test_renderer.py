@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 TEST_TMP_ROOT = Path(__file__).parent / ".tmp"
 TEST_TMP_ROOT.mkdir(exist_ok=True)
 
-from renderer import (
+from contexta_app.renderer import (
     __version__,
     estimate_tokens,
     generate_markdown,
@@ -162,7 +162,7 @@ class TestGenerateMarkdown(unittest.TestCase):
         md = generate_markdown(self.tmp)
         self.assertIn("Files: **0**", md)
 
-    @patch("renderer.get_git_changed_files", return_value=[])
+    @patch("contexta_app.renderer.get_git_changed_files", return_value=[])
     def test_diff_mode_falls_back_to_central_context_when_no_changed_files_exist(self, _mock_changed):
         (self.tmp / "main.py").write_text("print('hello')", encoding="utf-8")
         md = generate_markdown(self.tmp, diff_mode=True)
@@ -271,7 +271,7 @@ class TestGenerateMarkdown(unittest.TestCase):
         self.assertIn("entrypoint", md)
         self.assertNotIn("Score breakdown:", md)
 
-    @patch("renderer.get_git_changed_files")
+    @patch("contexta_app.renderer.get_git_changed_files")
     def test_onboarding_selection_reasons_do_not_use_diff_language(self, mock_changed):
         main_file = self.tmp / "contexta.py"
         ui_file = self.tmp / "ui.py"
@@ -307,7 +307,7 @@ class TestGenerateMarkdown(unittest.TestCase):
         md = generate_markdown(self.tmp, context_mode="full", compression="full")
         self.assertLess(md.index("### 📄 `contexta.py`"), md.index("### 📄 `helper.py`"))
 
-    @patch("renderer.get_git_changed_files")
+    @patch("contexta_app.renderer.get_git_changed_files")
     def test_changed_files_context_section_is_rendered(self, mock_changed):
         main_file = self.tmp / "contexta.py"
         helper_file = self.tmp / "renderer.py"
@@ -319,7 +319,7 @@ class TestGenerateMarkdown(unittest.TestCase):
         self.assertIn("Changed Files:", md)
         self.assertIn("contexta.py", md)
 
-    @patch("renderer.get_git_changed_files")
+    @patch("contexta_app.renderer.get_git_changed_files")
     def test_pr_review_diff_mode_is_review_first(self, mock_changed):
         main_file = self.tmp / "contexta.py"
         renderer_file = self.tmp / "renderer.py"
@@ -384,6 +384,19 @@ class TestGenerateMarkdown(unittest.TestCase):
         self.assertIn("output structure and presentation", md)
         self.assertNotIn("context_engine.py` handles input or submission flow", md)
         self.assertNotIn("renderer.py` handles input or submission flow", md)
+
+    def test_risk_analysis_uses_framework_aware_risk_language(self):
+        project_dir = self.tmp / "project"
+        app_dir = self.tmp / "app"
+        project_dir.mkdir(exist_ok=True)
+        app_dir.mkdir(exist_ok=True)
+        (self.tmp / "manage.py").write_text("from django.core.management import execute_from_command_line\n", encoding="utf-8")
+        (project_dir / "settings.py").write_text("INSTALLED_APPS = ['app']\nDATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3'}}\n", encoding="utf-8")
+        (project_dir / "urls.py").write_text("urlpatterns = []\n", encoding="utf-8")
+        (app_dir / "views.py").write_text("from django.http import HttpResponse\n\ndef health(request):\n    return HttpResponse('ok')\n", encoding="utf-8")
+        md = generate_markdown(self.tmp, context_mode="debug", task_profile="risk_analysis", compression="focused")
+        self.assertIn("runtime or environment configuration", md)
+        self.assertIn("request or routing boundary", md)
 
     def test_dead_code_mode_surfaces_verification_sections(self):
         (self.tmp / "utils.py").write_text("def helper():\n    return True\n", encoding="utf-8")

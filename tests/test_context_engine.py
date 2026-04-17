@@ -12,8 +12,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 TEST_TMP_ROOT = Path(__file__).parent / ".tmp"
 TEST_TMP_ROOT.mkdir(exist_ok=True)
 
-from context_engine import (
+from contexta_app.context_engine import (
     ExportConfig,
+    ProjectFingerprint,
     build_analysis,
     build_relationship_map,
     build_task_prompt,
@@ -27,8 +28,8 @@ from context_engine import (
     summarize_file,
     test_relation_score,
 )
-from scanner import build_tree
-from ui import resolve_pack_focus
+from contexta_app.scanner import build_tree
+from contexta_app.ui import resolve_pack_focus
 
 
 class TestAnalysisHeuristics(unittest.TestCase):
@@ -47,6 +48,21 @@ class TestAnalysisHeuristics(unittest.TestCase):
         item = make_file_insight(self.tmp, path)
         item.tags.update(classify_file(item))
         return item
+
+    def _fingerprint(self, project_type: str, primary_language: str, frameworks: list[str] | None = None):
+        return ProjectFingerprint(
+            primary_language=primary_language,
+            frameworks=frameworks or [],
+            runtime=[],
+            package_managers=[],
+            build_tools=[],
+            main_dependencies=[],
+            scripts=[],
+            project_type=project_type,
+            probable_purpose=None,
+            confidence=0.9,
+            evidence=[],
+        )
 
     def test_markdown_docs_stay_as_docs(self):
         item = self._insight("README.pt-BR.md", "# Contexta\n\nFerramenta desktop.\n")
@@ -263,6 +279,307 @@ class TestAnalysisHeuristics(unittest.TestCase):
         self.assertTrue(any("Frameworks: Next.js, React" in line for line in analysis.summary_lines))
         self.assertTrue(any("manifest dependencies: next, react" in line.lower() for line in analysis.summary_lines))
         self.assertTrue(any("Detected from:" in line and "package.json" in line for line in analysis.summary_lines))
+
+    def test_project_fingerprint_detects_django_kanban_project(self):
+        (self.tmp / "pyproject.toml").write_text(
+            "\n".join([
+                "[project]",
+                'name = "kanbanflow"',
+                'dependencies = ["django>=5.0", "djangorestframework>=3.15"]',
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "manage.py").write_text("from django.core.management import execute_from_command_line\n", encoding="utf-8")
+        (self.tmp / "project" / "settings.py").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "project" / "settings.py").write_text("INSTALLED_APPS = ['boards']\n", encoding="utf-8")
+        (self.tmp / "project" / "urls.py").write_text("from django.urls import path\nurlpatterns = []\n", encoding="utf-8")
+        (self.tmp / "boards" / "models.py").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "boards" / "models.py").write_text(
+            "\n".join([
+                "from django.db import models",
+                "class BoardCard(models.Model):",
+                "    title = models.CharField(max_length=120)",
+                "    status = models.CharField(max_length=32)",
+                "    assignee = models.CharField(max_length=80)",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "templates" / "boards" / "index.html").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "templates" / "boards" / "index.html").write_text("<h1>Kanban Board</h1><div>Backlog</div>", encoding="utf-8")
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="onboarding", task_profile="explain_project"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.primary_language, "Python")
+        self.assertEqual(analysis.fingerprint.project_type, "Django web application")
+        self.assertIn("Django", analysis.fingerprint.frameworks)
+        self.assertIn("task or kanban", analysis.likely_purpose.lower())
+        evidence_line = next(line for line in analysis.summary_lines if "Detected from:" in line)
+        self.assertIn("pyproject.toml", evidence_line)
+        self.assertIn("manage.py", evidence_line)
+
+    def test_project_fingerprint_detects_spring_boot_from_pom_xml(self):
+        (self.tmp / "pom.xml").write_text(
+            "\n".join([
+                "<project>",
+                "  <modelVersion>4.0.0</modelVersion>",
+                "  <groupId>com.example</groupId>",
+                "  <artifactId>kanban-service</artifactId>",
+                "  <dependencies>",
+                '    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>',
+                '    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-jpa</artifactId></dependency>',
+                "  </dependencies>",
+                "</project>",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main" / "java" / "com" / "example" / "KanbanApplication.java").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "src" / "main" / "java" / "com" / "example" / "KanbanApplication.java").write_text(
+            "\n".join([
+                "import org.springframework.boot.autoconfigure.SpringBootApplication;",
+                "@SpringBootApplication",
+                "public class KanbanApplication {}",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main" / "java" / "com" / "example" / "controllers" / "BoardController.java").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "src" / "main" / "java" / "com" / "example" / "controllers" / "BoardController.java").write_text(
+            "public class BoardController { String workflow = \"kanban\"; }",
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main" / "java" / "com" / "example" / "models" / "TaskCard.java").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "src" / "main" / "java" / "com" / "example" / "models" / "TaskCard.java").write_text(
+            "public class TaskCard { String status; String assignee; }",
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main" / "resources" / "application.properties").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "src" / "main" / "resources" / "application.properties").write_text("spring.application.name=kanban-service\n", encoding="utf-8")
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.primary_language, "Java")
+        self.assertEqual(analysis.fingerprint.project_type, "Spring Boot application")
+        self.assertIn("Spring Boot", analysis.fingerprint.frameworks)
+        self.assertIn("JPA/Hibernate", analysis.technologies)
+        self.assertIn("task or kanban", analysis.likely_purpose.lower())
+        evidence_line = next(line for line in analysis.summary_lines if "Detected from:" in line)
+        self.assertIn("pom.xml", evidence_line)
+
+    def test_project_fingerprint_detects_aspnet_core_project(self):
+        (self.tmp / "KanbanApp.csproj").write_text(
+            "\n".join([
+                "<Project Sdk=\"Microsoft.NET.Sdk.Web\">",
+                "  <ItemGroup>",
+                "    <PackageReference Include=\"Microsoft.AspNetCore.Mvc.NewtonsoftJson\" Version=\"8.0.0\" />",
+                "  </ItemGroup>",
+                "</Project>",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "Program.cs").write_text(
+            "\n".join([
+                "var builder = WebApplication.CreateBuilder(args);",
+                "builder.Services.AddControllers();",
+                "var app = builder.Build();",
+                "app.MapControllers();",
+                "app.Run();",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "appsettings.json").write_text('{"Logging":{"LogLevel":{"Default":"Information"}}}', encoding="utf-8")
+        (self.tmp / "Controllers" / "BoardController.cs").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "Controllers" / "BoardController.cs").write_text(
+            "\n".join([
+                "[ApiController]",
+                "[Route(\"api/board\")]",
+                "public class BoardController : ControllerBase {",
+                "  public string Get() => \"kanban workflow\";",
+                "}",
+            ]),
+            encoding="utf-8",
+        )
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.project_type, "ASP.NET Core application")
+        self.assertIn("ASP.NET Core", analysis.fingerprint.frameworks)
+        self.assertEqual(analysis.fingerprint.primary_language, "C#")
+        self.assertIn("task", analysis.likely_purpose.lower())
+
+    def test_project_fingerprint_detects_go_kanban_service(self):
+        (self.tmp / "go.mod").write_text(
+            "\n".join([
+                "module github.com/example/kanban",
+                "",
+                "go 1.23",
+                "",
+                "require github.com/gin-gonic/gin v1.10.0",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "cmd" / "server" / "main.go").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "cmd" / "server" / "main.go").write_text(
+            "\n".join([
+                "package main",
+                'import "github.com/gin-gonic/gin"',
+                "func main() {",
+                "  r := gin.Default()",
+                '  r.GET("/boards", func(c *gin.Context) {})',
+                "}",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "internal" / "kanban" / "service.go").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "internal" / "kanban" / "service.go").write_text(
+            "package kanban\n\ntype TaskCard struct { Status string; Assignee string }\n",
+            encoding="utf-8",
+        )
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.project_type, "Go application")
+        self.assertEqual(analysis.fingerprint.primary_language, "Go")
+        self.assertIn("Gin", analysis.fingerprint.frameworks)
+        self.assertIn("task", analysis.likely_purpose.lower())
+
+    def test_project_fingerprint_detects_nuxt_frontend(self):
+        (self.tmp / "package.json").write_text(
+            '{"dependencies":{"nuxt":"4.0.0","vue":"3.5.0"}}\n',
+            encoding="utf-8",
+        )
+        (self.tmp / "nuxt.config.ts").write_text("export default defineNuxtConfig({})\n", encoding="utf-8")
+        (self.tmp / "app" / "pages" / "index.vue").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "app" / "pages" / "index.vue").write_text("<template><HeroSection /></template>\n", encoding="utf-8")
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="onboarding", task_profile="explain_project"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.project_type, "Frontend web application")
+        self.assertIn("Nuxt", analysis.fingerprint.frameworks)
+        self.assertIn("Vue", analysis.fingerprint.frameworks)
+        self.assertEqual(analysis.fingerprint.primary_language, "TypeScript")
+
+    def test_project_fingerprint_detects_nest_backend(self):
+        (self.tmp / "package.json").write_text(
+            '{"dependencies":{"@nestjs/core":"11.0.0","@nestjs/common":"11.0.0","reflect-metadata":"0.2.0","rxjs":"7.8.0"}}\n',
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main.ts").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "src" / "main.ts").write_text("import { NestFactory } from '@nestjs/core'\n", encoding="utf-8")
+        (self.tmp / "src" / "controllers" / "board.controller.ts").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "src" / "controllers" / "board.controller.ts").write_text("export class BoardController {}\n", encoding="utf-8")
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.project_type, "Backend API service")
+        self.assertIn("NestJS", analysis.fingerprint.frameworks)
+
+    def test_project_fingerprint_detects_rails_application(self):
+        (self.tmp / "Gemfile").write_text(
+            "\n".join([
+                'source "https://rubygems.org"',
+                'gem "rails"',
+                'gem "pg"',
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "config" / "routes.rb").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "config" / "routes.rb").write_text("Rails.application.routes.draw do\n  root 'products#index'\nend\n", encoding="utf-8")
+        (self.tmp / "app" / "controllers" / "products_controller.rb").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "app" / "controllers" / "products_controller.rb").write_text("class ProductsController < ApplicationController\nend\n", encoding="utf-8")
+        (self.tmp / "app" / "models" / "product.rb").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "app" / "models" / "product.rb").write_text("class Product < ApplicationRecord\nend\n", encoding="utf-8")
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="onboarding", task_profile="explain_project"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.project_type, "Ruby on Rails application")
+        self.assertIn("Rails", analysis.fingerprint.frameworks)
+        self.assertEqual(analysis.fingerprint.primary_language, "Ruby")
+        evidence_line = next(line for line in analysis.summary_lines if "Detected from:" in line)
+        self.assertIn("Gemfile", evidence_line)
+        self.assertIn("config/routes.rb", evidence_line)
+
+    def test_project_fingerprint_detects_flutter_application(self):
+        (self.tmp / "pubspec.yaml").write_text(
+            "\n".join([
+                "name: kanban_mobile",
+                "dependencies:",
+                "  flutter:",
+                "    sdk: flutter",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "lib").mkdir(exist_ok=True)
+        (self.tmp / "lib" / "main.dart").write_text(
+            "\n".join([
+                "import 'package:flutter/material.dart';",
+                "void main() => runApp(const KanbanApp());",
+                "class KanbanApp extends StatelessWidget {",
+                "  const KanbanApp({super.key});",
+                "}",
+            ]),
+            encoding="utf-8",
+        )
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="onboarding", task_profile="explain_project"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(analysis.fingerprint.project_type, "Flutter application")
+        self.assertIn("Flutter", analysis.fingerprint.frameworks)
+        self.assertEqual(analysis.fingerprint.primary_language, "Dart")
 
     def test_risks_warn_when_no_obvious_tests_are_detected(self):
         (self.tmp / "contexta.py").write_text("__name__ = '__main__'\n", encoding="utf-8")
@@ -667,6 +984,101 @@ class TestAnalysisHeuristics(unittest.TestCase):
         )
         risk = compute_risk_score(item, [item], set(), {})
         self.assertNotIn("input or submission flow", risk.reasons)
+
+    def test_compute_risk_score_marks_django_settings_as_runtime_config(self):
+        item = self._insight(
+            "project/settings.py",
+            "INSTALLED_APPS = ['app']\nDATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3'}}\n",
+        )
+        item.summary = summarize_file(item, {}, "Django web application")
+        risk = compute_risk_score(
+            item,
+            [item],
+            set(),
+            {},
+            self._fingerprint("Django web application", "Python", ["Django"]),
+        )
+        self.assertIn("runtime or environment configuration", risk.reasons)
+        self.assertIn("config_surface", risk.risk_flags)
+
+    def test_compute_risk_score_marks_spring_controller_as_request_boundary(self):
+        item = self._insight(
+            "src/main/java/demo/UserController.java",
+            "\n".join([
+                "@RestController",
+                "@PostMapping(\"/users\")",
+                "class UserController { }",
+            ]),
+        )
+        item.summary = summarize_file(item, {}, "Spring Boot application")
+        risk = compute_risk_score(
+            item,
+            [item],
+            set(),
+            {},
+            self._fingerprint("Spring Boot application", "Java", ["Spring Boot"]),
+        )
+        self.assertIn("request or routing boundary", risk.reasons)
+        self.assertIn("request_boundary", risk.risk_flags)
+
+    def test_compute_risk_score_marks_flutter_provider_as_shared_state(self):
+        item = self._insight(
+            "lib/providers/auth_provider.dart",
+            "\n".join([
+                "class AuthProvider extends ChangeNotifier {",
+                "  void setUser(String id) { notifyListeners(); }",
+                "}",
+            ]),
+        )
+        item.summary = summarize_file(item, {}, "Flutter application")
+        risk = compute_risk_score(
+            item,
+            [item],
+            set(),
+            {},
+            self._fingerprint("Flutter application", "Dart", ["Flutter"]),
+        )
+        self.assertIn("shared app-wide behavior", risk.reasons)
+        self.assertIn("shared_state", risk.risk_flags)
+
+    def test_compute_risk_score_marks_rails_migration_as_schema_surface(self):
+        item = self._insight(
+            "db/migrate/202604170001_create_users.rb",
+            "\n".join([
+                "class CreateUsers < ActiveRecord::Migration[7.1]",
+                "  def change",
+                "    create_table :users do |t|",
+                "    end",
+                "  end",
+                "end",
+            ]),
+        )
+        item.summary = summarize_file(item, {}, "Ruby on Rails application")
+        risk = compute_risk_score(
+            item,
+            [item],
+            set(),
+            {},
+            self._fingerprint("Ruby on Rails application", "Ruby", ["Rails"]),
+        )
+        self.assertIn("schema or data model surface", risk.reasons)
+        self.assertIn("schema_surface", risk.risk_flags)
+
+    def test_compute_risk_score_marks_package_manifest_as_dependency_surface(self):
+        item = self._insight(
+            "package.json",
+            '{"dependencies":{"next":"15.0.0","react":"19.0.0"}}\n',
+        )
+        risk = compute_risk_score(
+            item,
+            [item],
+            {item.path.resolve()},
+            {},
+            self._fingerprint("Frontend web application", "TypeScript", ["Next.js", "React"]),
+        )
+        self.assertIn("dependency or build surface", risk.reasons)
+        self.assertIn("changed dependency or build config", risk.reasons)
+        self.assertIn("dependency_surface", risk.risk_flags)
 
     def test_marketing_domain_can_be_inferred_from_imports_and_visible_strings(self):
         (self.tmp / "package.json").write_text(

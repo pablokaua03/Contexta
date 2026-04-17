@@ -8,15 +8,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from context_engine import (
+from contexta_app.context_engine import (
     AI_PROFILE_OPTIONS,
     COMPRESSION_OPTIONS,
     CONTEXT_MODE_OPTIONS,
     PACK_OPTIONS,
     TASK_PROFILE_OPTIONS,
 )
-from renderer import __version__, generate_markdown
-from utils import get_desktop, safe_project_name
+from contexta_app.renderer import __version__, generate_markdown
+from contexta_app.utils import get_desktop, safe_project_name
 
 
 def copy_to_clipboard(text: str) -> None:

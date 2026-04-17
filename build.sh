@@ -16,6 +16,7 @@ fi
 
 PLATFORM="$(uname -s)"
 OUTPUT_PATH="dist/contexta"
+SPEC_FILE="packaging/pyinstaller/contexta.spec"
 
 echo ""
 echo " ========================================="
@@ -41,12 +42,12 @@ rm -rf build
 rm -f dist/contexta dist/contexta.exe dist/contexta-onefile.exe
 rm -rf dist/contexta-safe
 
-if [ ! -f "contexta.spec" ]; then
-    echo " Missing contexta.spec"
+if [ ! -f "$SPEC_FILE" ]; then
+    echo " Missing $SPEC_FILE"
     exit 1
 fi
 
-"$PYTHON_BIN" -m PyInstaller --noconfirm --clean contexta.spec
+"$PYTHON_BIN" -m PyInstaller --noconfirm --clean "$SPEC_FILE"
 
 if [ "$PLATFORM" = "Linux" ]; then
     OUTPUT_PATH="dist/contexta"

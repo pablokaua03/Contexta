@@ -9,11 +9,11 @@ import sys
 
 def main() -> None:
     if len(sys.argv) > 1:
-        from cli import run_cli
+        from contexta_app.cli import run_cli
 
         run_cli()
     else:
-        from ui import App
+        from contexta_app.ui import App
 
         app = App()
         app.mainloop()
