@@ -14,6 +14,8 @@
 
 [<img src="https://img.shields.io/badge/Download%20para%20Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
 &nbsp;&nbsp;
+[<img src="https://img.shields.io/badge/Download%20para%20Linux-E95420?style=for-the-badge&logo=linux&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux)
+&nbsp;&nbsp;
 [<img src="https://img.shields.io/badge/Todas%20as%20Releases-333?style=for-the-badge&logo=github&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest)
 
 > Sem instalação. É baixar e usar, ou executar pelo código-fonte com Python.
@@ -62,10 +64,11 @@ Use o Contexta quando você quer:
 | Recurso | Detalhe |
 |---|---|
 | GUI + CLI | Interface desktop para uso diário e linha de comando para script/automação |
-| Context Packs | `custom`, `chatgpt`, `onboarding`, `pr_review`, `debug`, `backend`, `frontend`, `changes_related` |
+| Context Packs | `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related` |
 | Context Modes | `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
 | Compression Modes | `full`, `balanced`, `focused`, `signatures` |
-| Saída orientada por tarefa | Molda o pack para explicação, bug report, code review, refactor, testes, dead code ou AI handoff |
+| Saída orientada por tarefa | Molda o pack para explicação, bug report, code review, análise de risco, refactor, testes, dead code ou AI handoff |
+| Project fingerprinting | Detecta stack, frameworks e tipo de projeto antes de selecionar arquivos |
 | Relationship Map | Mostra dependências locais e testes provavelmente relacionados |
 | Changed Files + Context | Puxa arquivos alterados e expande para o contexto mais relevante |
 | Selection reasons | Explica por que cada arquivo entrou |
@@ -81,6 +84,7 @@ Use o Contexta quando você quer:
 
 - `onboarding`: melhor ponto de partida para entender uma base nova
 - `pr_review`: enfatiza revisão e mudanças recentes
+- `risk_review`: destaca hotspots de regressão, módulos de alto impacto, cobertura ausente e pontos fracos de manutenção
 - `debug`: sobe arquivos suspeitos e alterados
 - `backend` / `frontend`: puxam mais contexto para esse lado da aplicação
 - `changes_related`: começa no git diff e expande para o entorno
@@ -116,7 +120,15 @@ Use o Contexta quando você quer:
 
 > O Windows pode implicar com executáveis open-source sem assinatura.
 
-### Opção B: rodar pelo código-fonte
+### Opção B: executável do Linux
+
+1. Baixe `contexta-linux`
+2. Execute `chmod +x contexta-linux`
+3. Execute `./contexta-linux`
+
+> Em algumas distros Linux, o `tkinter` pode vir como pacote separado, como `python3-tk`.
+
+### Opção C: rodar pelo código-fonte
 
 ```bash
 git clone https://github.com/pablokaua03/Contexta.git
@@ -133,6 +145,7 @@ O Contexta em si usa apenas a biblioteca padrão do Python em runtime. Em alguma
 ```bash
 python contexta.py /caminho/para/projeto
 python contexta.py /caminho/para/projeto --pack onboarding
+python contexta.py /caminho/para/projeto --pack risk_review
 python contexta.py /caminho/para/projeto --mode debug --task bug_report --focus "auth flow"
 python contexta.py /caminho/para/projeto --pack pr_review --diff --copy
 python contexta.py /caminho/para/projeto --task ai_handoff --compression balanced --focus "theme"

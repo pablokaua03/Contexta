@@ -14,6 +14,8 @@
 
 [<img src="https://img.shields.io/badge/Download%20for%20Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
 &nbsp;&nbsp;
+[<img src="https://img.shields.io/badge/Download%20for%20Linux-E95420?style=for-the-badge&logo=linux&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux)
+&nbsp;&nbsp;
 [<img src="https://img.shields.io/badge/All%20Releases-333?style=for-the-badge&logo=github&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest)
 
 > No installation needed. Download and run, or launch from source with Python.
@@ -64,10 +66,11 @@ Use it when you want to:
 | Feature | Detail |
 |---|---|
 | GUI + CLI | Desktop workflow for everyday use, plus command-line usage for scripting |
-| Context packs | `custom`, `chatgpt`, `onboarding`, `pr_review`, `debug`, `backend`, `frontend`, `changes_related` |
+| Context packs | `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related` |
 | Context modes | `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
 | Compression modes | `full`, `balanced`, `focused`, `signatures` |
-| Task-aware output | Shapes the export for explanation, bug reports, code review, refactors, tests, dead-code hunting, or AI handoff |
+| Task-aware output | Shapes the export for explanation, bug reports, code review, risk analysis, refactors, tests, dead-code hunting, or AI handoff |
+| Project fingerprinting | Detects stack, frameworks, and project type before selecting files |
 | Relationship map | Highlights local dependencies and likely related tests |
 | Changed Files + Context | Pulls changed files up and expands into nearby relevant code |
 | Selection reasons | Explains why each file was included in the payload |
@@ -83,6 +86,7 @@ Use it when you want to:
 
 - `onboarding`: start here when you need to understand a project fast
 - `pr_review`: emphasizes review-oriented context and recent changes
+- `risk_review`: highlights likely regression hotspots, broad-impact modules, missing coverage, and maintenance weak spots
 - `debug`: pushes suspicious and changed areas upward
 - `backend` / `frontend`: bias selection toward that side of the app
 - `changes_related`: starts from git changes and expands outward
@@ -118,7 +122,15 @@ Use it when you want to:
 
 > Windows SmartScreen can warn on unsigned open-source executables.
 
-### Option B: Run from source
+### Option B: Linux executable
+
+1. Download `contexta-linux`
+2. Run `chmod +x contexta-linux`
+3. Run `./contexta-linux`
+
+> Some Linux environments may require `python3-tk` if running from source instead.
+
+### Option C: Run from source
 
 ```bash
 git clone https://github.com/pablokaua03/Contexta.git
@@ -135,6 +147,7 @@ Contexta itself uses only the Python standard library at runtime. Some Linux env
 ```bash
 python contexta.py /path/to/project
 python contexta.py /path/to/project --pack onboarding
+python contexta.py /path/to/project --pack risk_review
 python contexta.py /path/to/project --mode debug --task bug_report --focus "auth flow"
 python contexta.py /path/to/project --pack pr_review --diff --copy
 python contexta.py /path/to/project --task ai_handoff --compression balanced --focus "theme"
