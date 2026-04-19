@@ -6,37 +6,28 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [1.5.0] - 2026-04-12
-
-### Changed
-- **Project fingerprinting** - Contexta now builds a stronger project fingerprint before the summary, using stack-defining files and explicit ecosystem rules
-- **Stack-aware summaries** - project summaries now separate primary language, frameworks, and supporting technologies instead of leaning on extension counts alone
-- **Identity-aware scoring** - dependency manifests, framework configs, and build files now influence file importance much more directly
-
-### Fixed
-- **Onboarding balance** - onboarding now keeps tests lighter in the payload and prefers shorter, more explanatory excerpts
-- **Bundled icon loading** - the packaged executable now ships the runtime `icon.ico` so the window and in-app branding can load it consistently
-
----
-
-## [1.5.0] - 2026-04-11
-
-### Changed
-- **Contexta rebrand** - the app now ships as `Contexta`, with refreshed green branding, a new window title, and build output renamed to `contexta`
-- **Premium daily-use interface** - redesigned the GUI around packs, context modes, AI targets, task presets, compression controls, and a live pack preview
-- **Curated export pipeline** - exports now start with structural analysis instead of jumping straight into raw file dumps
+## [1.6.0] - 2026-04-17
 
 ### Added
-- **Project Summary** - every pack now opens with detected technologies, likely entry points, important files, architecture notes, and likely purpose
-- **Smart context modes** - added `full`, `debug`, `feature`, `diff`, `onboarding`, and `refactor` selection strategies
-- **Relationship map** - Contexta now infers local dependencies and likely related test files
-- **Task + AI profiles** - exports can be shaped for ChatGPT, Claude, Gemini, Copilot, or a generic LLM, plus review/debug/refactor/test-focused tasks
-- **Context compression** - added balanced, focused, and signatures-only modes to reduce wasted tokens
-- **More renderer coverage** - tests now cover the new summary sections and compression behavior
+- **Syntax-aware parsing foundation** - Contexta now ships with `tree-sitter` and a dedicated syntax layer for stronger multi-language symbol extraction
+- **Foundation runtime dependencies** - `pathspec`, `charset-normalizer`, `tiktoken`, and `rapidfuzz` are now part of the runtime analysis stack
+- **Linux install bundle** - Linux builds now ship as `contexta-linux.tar.gz` with an `install.sh` helper for user-local installs
+- **Optional Windows installer support** - `build.bat` now emits `contexta-setup.exe` whenever Inno Setup is available locally
+
+### Changed
+- **Version upgrade** - repository version markers, packaged metadata, and docs now target `1.6.0`
+- **Gitignore handling** - scan filtering now uses Git-style pattern matching via `pathspec` instead of relying only on hand-rolled glob rules
+- **File decoding** - file reading now prefers `charset-normalizer` before strict encoding fallbacks, improving support for real-world mixed encodings
+- **Token estimation** - renderer token sizing now uses `tiktoken` instead of character heuristics alone when available
+- **Test relationship scoring** - related-test detection now uses stronger fuzzy matching instead of substring checks alone
+- **Windows build pipeline** - official Windows builds now use Nuitka onefile output
+- **Linux build pipeline** - Unix builds now package both a portable binary and an installable tarball bundle
+- **Project positioning** - docs and contribution rules now describe Contexta as syntax-aware and stack-aware instead of a zero-dependency tool
 
 ### Fixed
-- **Theme toggle polish** - restored real sun/moon visuals in the header instead of literal fallback text
-- **Executable naming** - build scripts now generate `contexta.exe`
+- **Multi-language symbol extraction** - added better extraction coverage for Java, C#, Go, and Rust, plus tree-sitter-backed paths for supported languages
+- **Scanner robustness** - unreadable files and legacy encodings now fall back more gracefully instead of being discarded too early
+- **Version drift** - stale pre-1.6 markers and legacy packaging artifacts were cleaned up from the active release surface
 
 ---
 

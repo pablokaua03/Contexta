@@ -20,6 +20,8 @@ from contexta_app.context_engine import (
     build_task_prompt,
     classify_file,
     compute_risk_score,
+    extract_alpha_tokens,
+    extract_import_enriched_domain_tokens,
     extract_relevant_excerpt,
     infer_file_role_pipeline,
     make_file_insight,
@@ -115,7 +117,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
             "\n".join([
                 "# Changelog",
                 "",
-                "## [1.5.0] - 2026-04-12",
+                "## [1.6.0] - 2026-04-17",
                 long_line,
             ]),
         )
@@ -176,12 +178,14 @@ class TestAnalysisHeuristics(unittest.TestCase):
         self.assertEqual(summary, "Defines GUI theme palettes and widget repaint behavior.")
 
     def test_support_file_summaries_are_specific(self):
-        requirements = self._insight("requirements.txt", "pyinstaller\n")
-        build_bat = self._insight("build.bat", "@echo off\npy -m PyInstaller contexta.py\n")
-        build_sh = self._insight("build.sh", "#!/usr/bin/env bash\npyinstaller contexta.py\n")
-        self.assertIn("dependency expectations", summarize_file(requirements, {}).lower())
-        self.assertIn("windows executable packaging", summarize_file(build_bat, {}).lower())
-        self.assertIn("unix-like executable packaging", summarize_file(build_sh, {}).lower())
+        requirements = self._insight("requirements.txt", "pathspec\ntiktoken\n")
+        build_requirements = self._insight("requirements-build.txt", "nuitka\npyinstaller\n")
+        build_bat = self._insight("build.bat", "@echo off\npy -m nuitka contexta.py\n")
+        build_sh = self._insight("build.sh", "#!/usr/bin/env bash\npython3 -m PyInstaller contexta.py\ntar -czf dist/contexta-linux.tar.gz dist/contexta\n")
+        self.assertIn("runtime dependencies", summarize_file(requirements, {}).lower())
+        self.assertIn("build-time tooling", summarize_file(build_requirements, {}).lower())
+        self.assertIn("nuitka-based build pipeline", summarize_file(build_bat, {}).lower())
+        self.assertIn("linux install bundle", summarize_file(build_sh, {}).lower())
 
     def test_mdcodebrief_summary_mentions_compatibility_shim(self):
         item = self._insight("mdcodebrief.py", "from contexta import main\n\nmain()\n")
@@ -194,13 +198,62 @@ class TestAnalysisHeuristics(unittest.TestCase):
         summary = summarize_file(item, {})
         self.assertEqual(summary, "Acts as the main entrypoint that routes execution into the GUI or CLI flow.")
 
+    def test_syntax_summary_mentions_tree_sitter_role(self):
+        item = self._insight("syntax.py", "from tree_sitter_language_pack import get_parser\n")
+        summary = summarize_file(item, {})
+        self.assertIn("syntax-aware symbols", summary.lower())
+        self.assertIn("tree-sitter", summary.lower())
+
+    def test_make_file_insight_extracts_go_symbols(self):
+        path = self.tmp / "cmd" / "main.go"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "\n".join([
+                "package main",
+                "",
+                'import "fmt"',
+                "",
+                "type Server struct{}",
+                "",
+                "func main() {",
+                '    fmt.Println("ok")',
+                "}",
+            ]),
+            encoding="utf-8",
+        )
+        item = make_file_insight(self.tmp, path)
+        self.assertIn("main", item.functions)
+        self.assertIn("Server", item.classes)
+        self.assertIn("fmt", item.imports)
+
+    def test_make_file_insight_extracts_rust_symbols(self):
+        path = self.tmp / "src" / "lib.rs"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "\n".join([
+                "use crate::graph::Node;",
+                "",
+                "struct Graph;",
+                "",
+                "fn run() {}",
+            ]),
+            encoding="utf-8",
+        )
+        item = make_file_insight(self.tmp, path)
+        self.assertIn("run", item.functions)
+        self.assertIn("Graph", item.classes)
+        self.assertTrue(any("crate::graph::Node" in imported for imported in item.imports))
+
     def test_project_fingerprint_detects_python_desktop_gui_cli_tool(self):
         (self.tmp / "contexta.py").write_text("__name__ = '__main__'\n", encoding="utf-8")
         (self.tmp / "ui.py").write_text("import tkinter as tk\n", encoding="utf-8")
         (self.tmp / "cli.py").write_text("import argparse\n", encoding="utf-8")
         (self.tmp / "renderer.py").write_text("def generate_markdown():\n    return ''\n", encoding="utf-8")
         (self.tmp / "scanner.py").write_text("def build_tree():\n    return {}\n", encoding="utf-8")
-        (self.tmp / "requirements.txt").write_text("pyinstaller\n", encoding="utf-8")
+        (self.tmp / "requirements.txt").write_text(
+            "\n".join(["pathspec", "charset-normalizer", "tiktoken", "tree-sitter", "tree-sitter-language-pack", "rapidfuzz"]),
+            encoding="utf-8",
+        )
 
         tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
         analysis = build_analysis(
@@ -216,7 +269,8 @@ class TestAnalysisHeuristics(unittest.TestCase):
         self.assertIn("Tkinter", analysis.fingerprint.frameworks)
         self.assertIn("CLI", analysis.fingerprint.runtime)
         self.assertIn("Python standard library", analysis.technologies)
-        self.assertIn("optional PyInstaller packaging", analysis.technologies)
+        self.assertIn("syntax-aware parsing", analysis.technologies)
+        self.assertIn("token-aware pack sizing", analysis.technologies)
         self.assertNotIn("Tkinter desktop interface", analysis.technologies)
         self.assertNotIn("pip-style requirements", [entry.lower() for entry in analysis.technologies])
         self.assertIn("desktop GUI + CLI developer tool built around repository analysis and export workflows", analysis.summary_lines[0])
@@ -887,6 +941,165 @@ class TestAnalysisHeuristics(unittest.TestCase):
         self.assertIn("Quality signals: unittest-based test suite", summary_blob)
         self.assertNotIn("Supporting technologies: unittest-based test suite", summary_blob)
 
+    def test_contexta_style_self_analysis_ignores_test_fixture_framework_strings(self):
+        app_dir = self.tmp / "contexta_app"
+        app_dir.mkdir(exist_ok=True)
+        (self.tmp / "requirements.txt").write_text(
+            "\n".join([
+                "pathspec>=0.12",
+                "charset-normalizer>=3.4",
+                "tiktoken>=0.12",
+                "tree-sitter>=0.25",
+                "tree-sitter-language-pack>=1.6",
+                "rapidfuzz>=3.14",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "contexta.py").write_text(
+            "\n".join([
+                "from __future__ import annotations",
+                "import sys",
+                "",
+                "def main() -> None:",
+                "    if len(sys.argv) > 1:",
+                "        from contexta_app.cli import run_cli",
+                "        run_cli()",
+                "    else:",
+                "        from contexta_app.ui import App",
+                "        App().mainloop()",
+            ]),
+            encoding="utf-8",
+        )
+        (app_dir / "ui.py").write_text(
+            "\n".join([
+                "from __future__ import annotations",
+                "import tkinter as tk",
+                "from contexta_app.context_engine import build_analysis",
+                "",
+                "class App(tk.Tk):",
+                "    pass",
+            ]),
+            encoding="utf-8",
+        )
+        (app_dir / "cli.py").write_text(
+            "\n".join([
+                "from __future__ import annotations",
+                "import sys",
+                "",
+                "def run_cli() -> None:",
+                "    print(sys.argv)",
+            ]),
+            encoding="utf-8",
+        )
+        (app_dir / "renderer.py").write_text(
+            "\n".join([
+                "from contexta_app.context_engine import build_analysis",
+                "",
+                "def generate_markdown():",
+                "    return build_analysis()",
+            ]),
+            encoding="utf-8",
+        )
+        (app_dir / "scanner.py").write_text(
+            "\n".join([
+                "from pathlib import Path",
+                "",
+                "def read_file_safe(path: Path):",
+                "    return path.read_text(encoding='utf-8'), False, 0",
+            ]),
+            encoding="utf-8",
+        )
+        (app_dir / "context_engine.py").write_text(
+            "\n".join([
+                "from contexta_app.scanner import read_file_safe",
+                "",
+                "def build_analysis():",
+                "    return {",
+                "        'summary': 'Scan local repositories and generate curated context packs for AI workflows.',",
+                "        'quality_label': 'pytest-based test coverage',",
+                "        'fixture': 'Spring Boot application',",
+                "    }",
+            ]),
+            encoding="utf-8",
+        )
+        tests_dir = self.tmp / "tests"
+        tests_dir.mkdir(exist_ok=True)
+        (tests_dir / "test_context_engine.py").write_text(
+            "\n".join([
+                "import unittest",
+                "",
+                "class TestFixtures(unittest.TestCase):",
+                "    def test_spring_fixture(self):",
+                "        fixture = '@SpringBootApplication\\napplication.properties\\norg.springframework.boot'",
+                "        self.assertTrue(fixture)",
+            ]),
+            encoding="utf-8",
+        )
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="onboarding", task_profile="explain_project"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        summary_blob = "\n".join(analysis.summary_lines)
+        self.assertEqual(analysis.fingerprint.project_type, "Desktop GUI + CLI developer tool")
+        self.assertIn("Tkinter", analysis.fingerprint.frameworks)
+        self.assertNotIn("Spring Boot", analysis.fingerprint.frameworks)
+        self.assertIn("Quality signals: unittest-based test suite", summary_blob)
+        self.assertNotIn("Spring Boot", summary_blob)
+        self.assertNotIn("pytest-based test coverage", summary_blob)
+
+    def test_quality_signals_detect_real_pytest_usage(self):
+        (self.tmp / "contexta.py").write_text("__name__ = '__main__'\n", encoding="utf-8")
+        tests_dir = self.tmp / "tests"
+        tests_dir.mkdir(exist_ok=True)
+        (tests_dir / "test_cli.py").write_text(
+            "\n".join([
+                "import pytest",
+                "",
+                "@pytest.mark.parametrize('value', [1, 2])",
+                "def test_cli(value):",
+                "    assert value",
+            ]),
+            encoding="utf-8",
+        )
+        (self.tmp / "pytest.ini").write_text("[pytest]\naddopts = -q\n", encoding="utf-8")
+
+        tree = build_tree(self.tmp, False, False, lambda *_args, **_kwargs: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp,
+            tree,
+            [],
+            ExportConfig(context_mode="onboarding", task_profile="explain_project"),
+            lambda *_args, **_kwargs: None,
+        )
+
+        self.assertIn("Quality signals: pytest-based test coverage", "\n".join(analysis.summary_lines))
+
+    def test_unicode_domain_token_extraction_handles_imports_without_broad_ranges(self):
+        item = self._insight(
+            "src/localizacao/painel.py",
+            "\n".join([
+                "from aplicacao.modulos.gestao import PainelEducacional",
+                "",
+                "def carregar_visao_principal():",
+                "    return 'gestão acadêmica'",
+            ]),
+        )
+
+        self.assertEqual(
+            extract_alpha_tokens("gestão acadêmica painel"),
+            ["gestão", "acadêmica", "painel"],
+        )
+        tokens = extract_import_enriched_domain_tokens([item])
+        self.assertIn("localizacao", tokens)
+        self.assertIn("aplicacao", tokens)
+        self.assertIn("gestão", tokens)
+
     def test_risk_analysis_prompt_mentions_hotspots_and_hints(self):
         prompt = build_task_prompt(Path("demo"), ExportConfig(task_profile="risk_analysis"))
         self.assertIn("regression hotspots", prompt)
@@ -1401,6 +1614,168 @@ class TestAnalysisHeuristics(unittest.TestCase):
     def test_pack_focus_switch_preserves_manual_value(self):
         focus, auto = resolve_pack_focus("custom auth flow", "backend api server", "frontend ui screen")
         self.assertEqual((focus, auto), ("custom auth flow", "backend api server"))
+
+
+    # ------------------------------------------------------------------
+    # New detection tests: real-world project scenarios
+    # ------------------------------------------------------------------
+
+    def test_project_fingerprint_detects_kotlin_android_app(self):
+        """Kotlin-only Android app should be detected as Android (not Java/PHP)."""
+        (self.tmp / "app" / "src" / "main").mkdir(parents=True, exist_ok=True)
+        (self.tmp / "app" / "src" / "main" / "AndroidManifest.xml").write_text(
+            '<?xml version="1.0"?><manifest package="com.example.tasks"><application android:label="KanbanApp"/></manifest>',
+            encoding="utf-8",
+        )
+        (self.tmp / "app" / "build.gradle").write_text(
+            "apply plugin: 'com.android.application'\n"
+            "android { compileSdk 34 }\n"
+            "dependencies { implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.0' }\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "app" / "src" / "main" / "java" / "com" / "example").mkdir(parents=True, exist_ok=True)
+        (self.tmp / "app" / "src" / "main" / "java" / "com" / "example" / "MainActivity.kt").write_text(
+            "class MainActivity : AppCompatActivity() { override fun onCreate() {} }",
+            encoding="utf-8",
+        )
+        tree = build_tree(self.tmp, False, False, lambda *_a, **_kw: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp, tree, [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_a, **_kw: None,
+        )
+        self.assertEqual(analysis.fingerprint.project_type, "Android application")
+        self.assertTrue(any("android" in f.lower() for f in analysis.fingerprint.frameworks))
+
+    def test_project_fingerprint_detects_django_without_manage_py(self):
+        """Django projects identified via settings.py + urls.py when manage.py is absent."""
+        (self.tmp / "myapp").mkdir()
+        (self.tmp / "myapp" / "settings.py").write_text(
+            "INSTALLED_APPS = ['django.contrib.admin', 'tasks']\nDATABASES = {}\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "myapp" / "urls.py").write_text(
+            "from django.urls import path\nurlpatterns = []\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "tasks" / "models.py").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "tasks" / "models.py").write_text(
+            "from django.db import models\nclass Task(models.Model):\n    title = models.CharField(max_length=120)\n",
+            encoding="utf-8",
+        )
+        tree = build_tree(self.tmp, False, False, lambda *_a, **_kw: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp, tree, [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_a, **_kw: None,
+        )
+        self.assertEqual(analysis.fingerprint.project_type, "Django web application")
+        self.assertIn("Django", analysis.fingerprint.frameworks)
+
+    def test_project_fingerprint_detects_django_from_imports_only(self):
+        """Django detected purely from Python import patterns when no manifest exists."""
+        (self.tmp / "app").mkdir()
+        (self.tmp / "app" / "views.py").write_text(
+            "from django.shortcuts import render\nfrom django.http import HttpResponse\n\ndef index(request):\n    return render(request, 'index.html', {})\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "app" / "models.py").write_text(
+            "from django.db import models\nclass Article(models.Model):\n    title = models.CharField(max_length=200)\n",
+            encoding="utf-8",
+        )
+        tree = build_tree(self.tmp, False, False, lambda *_a, **_kw: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp, tree, [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_a, **_kw: None,
+        )
+        self.assertIn("Django", analysis.fingerprint.frameworks)
+        self.assertEqual(analysis.fingerprint.project_type, "Django web application")
+
+    def test_domain_detection_from_directory_names(self):
+        """Domain inferred from directory structure even without code vocabulary."""
+        (self.tmp / "boards").mkdir()
+        (self.tmp / "boards" / "board.py").write_text("class Board:\n    pass\n", encoding="utf-8")
+        (self.tmp / "sprints").mkdir()
+        (self.tmp / "sprints" / "sprint.py").write_text("class Sprint:\n    pass\n", encoding="utf-8")
+        (self.tmp / "requirements.txt").write_text("django>=4.0\n", encoding="utf-8")
+        tree = build_tree(self.tmp, False, False, lambda *_a, **_kw: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp, tree, [],
+            ExportConfig(context_mode="onboarding", task_profile="explain_project"),
+            lambda *_a, **_kw: None,
+        )
+        self.assertIn("task", analysis.likely_purpose.lower())
+
+    def test_requirements_txt_role_is_generic_for_non_contexta_projects(self):
+        """requirements.txt should NOT say 'Contexta' for a generic Django project."""
+        req = self._insight("requirements.txt", "django>=4.0\npsycopg2>=2.9\n")
+        role = summarize_file(req, {})
+        self.assertNotIn("contexta", role.lower())
+        self.assertNotIn("token estimation", role.lower())
+        self.assertIn("runtime", role.lower())
+
+    def test_build_bat_role_is_generic_without_nuitka(self):
+        """build.bat without nuitka content gets a generic description."""
+        build = self._insight("build.bat", "@echo off\ncall mvn clean package\n")
+        role = summarize_file(build, {})
+        self.assertNotIn("nuitka", role.lower())
+        self.assertIn("windows", role.lower())
+
+    def test_build_bat_role_is_specific_with_nuitka(self):
+        """build.bat with nuitka content gets the specific Nuitka description."""
+        build = self._insight("build.bat", "@echo off\npy -m nuitka --onefile contexta.py\n")
+        role = summarize_file(build, {})
+        self.assertIn("nuitka", role.lower())
+
+    def test_spring_boot_gradle_without_pom_xml(self):
+        """Spring Boot project using Gradle (not Maven) is correctly detected."""
+        (self.tmp / "build.gradle").write_text(
+            "plugins { id 'org.springframework.boot' version '3.2.0' }\n"
+            "dependencies {\n"
+            "    implementation 'org.springframework.boot:spring-boot-starter-web'\n"
+            "    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'\n"
+            "}\n",
+            encoding="utf-8",
+        )
+        (self.tmp / "src" / "main" / "java" / "com" / "example").mkdir(parents=True, exist_ok=True)
+        (self.tmp / "src" / "main" / "java" / "com" / "example" / "TaskController.java").write_text(
+            "@RestController\npublic class TaskController {\n    @GetMapping('/tasks')\n    public List<Task> list() { return null; }\n}",
+            encoding="utf-8",
+        )
+        tree = build_tree(self.tmp, False, False, lambda *_a, **_kw: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp, tree, [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_a, **_kw: None,
+        )
+        self.assertEqual(analysis.fingerprint.project_type, "Spring Boot application")
+        self.assertIn("Spring Boot", analysis.fingerprint.frameworks)
+        self.assertIn("Gradle", analysis.fingerprint.package_managers)
+
+    def test_python_project_not_classified_as_php_crud(self):
+        """A Python project with service and repository layers must NOT be classified as PHP CRUD."""
+        (self.tmp / "requirements.txt").write_text("fastapi>=0.110\nsqlalchemy>=2.0\n", encoding="utf-8")
+        (self.tmp / "services" / "task_service.py").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "services" / "task_service.py").write_text("class TaskService:\n    pass\n", encoding="utf-8")
+        (self.tmp / "repositories" / "task_repository.py").parent.mkdir(parents=True, exist_ok=True)
+        (self.tmp / "repositories" / "task_repository.py").write_text("class TaskRepository:\n    pass\n", encoding="utf-8")
+        (self.tmp / "main.py").write_text("from fastapi import FastAPI\napp = FastAPI()\n", encoding="utf-8")
+        tree = build_tree(self.tmp, False, False, lambda *_a, **_kw: None, [0], [], self.tmp)
+        analysis = build_analysis(
+            self.tmp, tree, [],
+            ExportConfig(context_mode="full", task_profile="general"),
+            lambda *_a, **_kw: None,
+        )
+        self.assertNotEqual(analysis.fingerprint.project_type, "PHP CRUD web application")
+        self.assertNotIn("PHP", analysis.fingerprint.primary_language or "")
+
+    def test_xml_android_manifest_role_is_specific(self):
+        """AndroidManifest.xml gets a meaningful role description."""
+        manifest = self._insight("AndroidManifest.xml",
+            '<?xml version="1.0"?><manifest package="com.example"><application android:label="App"/></manifest>')
+        role = summarize_file(manifest, {})
+        self.assertIn("android", role.lower())
 
 
 if __name__ == "__main__":

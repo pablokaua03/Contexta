@@ -1,13 +1,6 @@
-# Contexta has zero external runtime dependencies.
-# It runs entirely on the Python standard library.
-#
-# Python 3.10+ is required.
-#
-# On Debian/Ubuntu Linux, tkinter may need to be installed separately:
-#   sudo apt install python3-tk
-#
-# Optional executable builds use PyInstaller, but it is not required
-# to run Contexta from source.
-#
-# To run tests (no extra packages needed):
-#   python -m unittest discover tests/
+pathspec>=0.12,<1.1
+charset-normalizer>=3.4,<4
+tiktoken>=0.12,<1
+tree-sitter>=0.25,<0.26
+tree-sitter-language-pack>=1.6,<2
+rapidfuzz>=3.14,<4

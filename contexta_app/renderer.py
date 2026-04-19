@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import tiktoken
+
 from contexta_app.context_engine import (
     APP_NAME,
     AI_PROFILE_OPTIONS,
@@ -20,13 +22,35 @@ from contexta_app.context_engine import (
     build_analysis,
     extract_relevant_excerpt,
     extract_signatures,
+    test_relation_score,
 )
 from contexta_app.scanner import build_diff_tree, build_tree, count_files, get_git_changed_files, load_gitignore_patterns
 
-__version__ = "1.5.0"
+__version__ = "1.6.0"
+
+_TOKEN_ENCODER = None
+
+
+def _get_token_encoder():
+    global _TOKEN_ENCODER
+    if _TOKEN_ENCODER is not None:
+        return _TOKEN_ENCODER
+    try:
+        _TOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        _TOKEN_ENCODER = False
+    return _TOKEN_ENCODER
 
 
 def estimate_tokens(text: str) -> int:
+    encoder = _get_token_encoder()
+    if encoder:
+        try:
+            return max(1, len(encoder.encode(text, disallowed_special=())))
+        except TypeError:
+            return max(1, len(encoder.encode(text)))
+        except Exception:
+            pass
     return max(1, len(text) // 4)
 
 
@@ -454,7 +478,7 @@ def has_related_selected_test(item, selected_files) -> bool:
     for candidate in selected_files:
         if "test" not in candidate.tags:
             continue
-        if item.path.stem.lower() in candidate.path.stem.lower() or item.path.stem.lower() in candidate.content.lower():
+        if test_relation_score(item, candidate) >= 4:
             return True
     return False
 

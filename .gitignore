@@ -14,3 +14,4 @@ Thumbs.db
 *.swp
 resume - *.md
 tests/.tmp/
+nuitka-crash-report.xml

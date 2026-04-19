@@ -217,9 +217,7 @@ def _window_icon_source() -> str | None:
     if icon:
         return str(icon)
     if sys.platform == "win32" and getattr(sys, "frozen", False):
-        executable = Path(sys.executable)
-        if executable.is_file():
-            return str(executable)
+        return str(Path(sys.executable))
     return None
 
 

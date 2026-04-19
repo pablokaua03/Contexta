@@ -12,7 +12,10 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from rapidfuzz.fuzz import ratio
+
 from contexta_app.scanner import get_language, read_file_safe
+from contexta_app.syntax import extract_symbols_with_treesitter
 
 APP_NAME = "Contexta"
 
@@ -221,6 +224,21 @@ STOPWORDS = {
     "review", "write", "tests", "find", "debug", "feature", "refactor", "bug",
 }
 
+UNICODE_ALPHA_TOKEN_RE = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
+CAMEL_CASE_TOKEN_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z]|$)")
+
+
+def extract_alpha_tokens(text: str) -> list[str]:
+    return UNICODE_ALPHA_TOKEN_RE.findall(text)
+
+
+def normalized_name_similarity(left: str, right: str) -> int:
+    left_key = re.sub(r"[^a-z0-9]+", "", left.lower())
+    right_key = re.sub(r"[^a-z0-9]+", "", right.lower())
+    if not left_key or not right_key:
+        return 0
+    return int(ratio(left_key, right_key))
+
 DOC_FILENAMES = {
     "readme",
     "readme.md",
@@ -243,9 +261,18 @@ TECH_LABELS = {
     "elixir": "Elixir",
     "dart": "Dart",
     "java": "Java",
+    "kotlin": "Kotlin",
+    "scala": "Scala",
     "csharp": "C#",
     "go": "Go",
     "rust": "Rust",
+    "cpp": "C++",
+    "c": "C",
+    "swift": "Swift",
+    "lua": "Lua",
+    "r": "R",
+    "nim": "Nim",
+    "zig": "Zig",
     "html": "HTML",
     "css": "CSS",
     "scss": "SCSS",
@@ -272,6 +299,15 @@ CODE_LANGUAGE_WEIGHTS = {
     "go": 1.2,
     "csharp": 1.2,
     "java": 1.2,
+    "kotlin": 1.2,
+    "scala": 1.1,
+    "swift": 1.2,
+    "cpp": 1.1,
+    "c": 1.0,
+    "lua": 0.9,
+    "r": 0.9,
+    "nim": 0.9,
+    "zig": 0.9,
     "css": 0.2,
     "scss": 0.2,
     "json": 0.15,
@@ -747,6 +783,12 @@ def make_file_insight(project_path: Path, path: Path) -> FileInsight:
 
 
 def extract_symbols(content: str, lang: str | None) -> tuple[list[str], list[str], list[str]]:
+    syntax_symbols = extract_symbols_with_treesitter(content, lang)
+    if syntax_symbols:
+        functions, classes, imports = syntax_symbols
+        if functions or classes or imports:
+            return functions[:12], classes[:8], imports[:24]
+
     if lang == "python":
         functions = re.findall(r"^\s*(?:async\s+def|def)\s+([A-Za-z_]\w*)", content, re.MULTILINE)
         classes = re.findall(r"^\s*class\s+([A-Za-z_]\w*)", content, re.MULTILINE)
@@ -770,6 +812,36 @@ def extract_symbols(content: str, lang: str | None) -> tuple[list[str], list[str
             re.findall(r"""(?:require|require_once|include|include_once)\s*(?:\(|)\s*['"]([^'"]+)['"]""", content, re.IGNORECASE)
         )
         imports.extend(re.findall(r"^\s*use\s+([A-Za-z0-9_\\\\]+)", content, re.MULTILINE))
+        return functions[:12], classes[:8], imports[:24]
+
+    if lang == "java":
+        functions = re.findall(
+            r"\b(?:public|protected|private|static|final|synchronized|abstract|native|\s)+[\w<>\[\],?]+\s+([A-Za-z_]\w*)\s*\(",
+            content,
+        )
+        classes = re.findall(r"\b(?:class|interface|enum|record)\s+([A-Za-z_]\w*)", content)
+        imports = re.findall(r"^\s*import\s+([A-Za-z0-9_.*]+)", content, re.MULTILINE)
+        return functions[:12], classes[:8], imports[:24]
+
+    if lang == "csharp":
+        functions = re.findall(
+            r"\b(?:public|private|protected|internal|static|async|virtual|override|sealed|partial|extern|new|\s)+[\w<>\[\],?]+\s+([A-Za-z_]\w*)\s*\(",
+            content,
+        )
+        classes = re.findall(r"\b(?:class|interface|enum|record|struct)\s+([A-Za-z_]\w*)", content)
+        imports = re.findall(r"^\s*using\s+([A-Za-z0-9_.]+)", content, re.MULTILINE)
+        return functions[:12], classes[:8], imports[:24]
+
+    if lang == "go":
+        functions = re.findall(r"\bfunc\s+([A-Za-z_]\w*)\s*\(", content)
+        classes = re.findall(r"\btype\s+([A-Za-z_]\w*)\s+(?:struct|interface)", content)
+        imports = re.findall(r'import\s+(?:\(\s*)?"([^"]+)"', content)
+        return functions[:12], classes[:8], imports[:24]
+
+    if lang == "rust":
+        functions = re.findall(r"\bfn\s+([A-Za-z_]\w*)\s*\(", content)
+        classes = re.findall(r"\b(?:struct|enum|trait)\s+([A-Za-z_]\w*)", content)
+        imports = re.findall(r"^\s*use\s+([^;]+);", content, re.MULTILINE)
         return functions[:12], classes[:8], imports[:24]
 
     return [], [], []
@@ -1044,6 +1116,12 @@ def test_relation_score(item: FileInsight, candidate: FileInsight) -> int:
     if parent_name and parent_name != "." and parent_name in rel:
         score += 1
 
+    fuzzy_name_score = normalized_name_similarity(item.path.stem, candidate.path.stem.replace("test_", "").replace("_test", ""))
+    if fuzzy_name_score >= 92:
+        score += 2
+    elif fuzzy_name_score >= 80:
+        score += 1
+
     return score
 
 
@@ -1080,15 +1158,30 @@ def summarize_support_file(item: FileInsight) -> str | None:
     rel = item.relpath.as_posix().lower()
 
     if name == "requirements.txt":
-        return "Documents Python runtime, packaging, and test-time dependency expectations."
+        content_lower = item.content.lower()
+        _contexta_deps = {"pathspec", "tiktoken", "rapidfuzz", "charset-normalizer", "chardet"}
+        if any(dep in content_lower for dep in _contexta_deps):
+            return "Declares runtime dependencies for parsing, token estimation, and repository analysis."
+        return "Declares runtime dependencies and version constraints for the project."
+    if name == "requirements-build.txt":
+        return "Declares build-time tooling for packaging the project on Windows and Unix-like systems."
     if name == "version_info.txt":
         return "Defines Windows version metadata used in packaged executable builds."
     if name == "build.bat":
-        return "Automates Windows executable packaging through PyInstaller build steps."
+        if "nuitka" in item.content.lower():
+            return "Automates Windows executable packaging through the Nuitka-based build pipeline."
+        return "Automates Windows build or packaging steps for the project."
     if name == "build.sh":
-        return "Automates Unix-like executable packaging through PyInstaller build steps."
+        content_lower = item.content.lower()
+        if "linux" in content_lower and ("tar" in content_lower or "install" in content_lower):
+            return "Automates Unix-like executable packaging and Linux install bundle generation."
+        if "nuitka" in content_lower:
+            return "Automates Unix-like executable packaging through the Nuitka-based build pipeline."
+        return "Automates Unix-like build, packaging, or deployment steps for the project."
     if name.endswith(".spec") and "pyinstaller" in item.content.lower():
         return "Defines the PyInstaller build spec used to package the desktop application."
+    if name == "syntax.py":
+        return "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers."
     if name == "contexta.py":
         return "Acts as the main entrypoint that routes execution into the GUI or CLI flow."
     if name == "mdcodebrief.py":
@@ -1312,6 +1405,7 @@ def infer_exact_name_role(item: FileInsight) -> str | None:
         "context_engine.py": "Implements project analysis, scoring, and smart context selection.",
         "renderer.py": "Formats selected analysis into the final context pack output.",
         "scanner.py": "Scans the project tree, applies filters, and reads safe text content.",
+        "syntax.py": "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers.",
         "ui.py": "Implements the desktop GUI and export workflow orchestration.",
         "cli.py": "Implements the command-line workflow for pack generation and output.",
         "theme.py": "Defines GUI theme palettes and widget repaint behavior.",
@@ -1332,13 +1426,33 @@ def infer_exact_name_role(item: FileInsight) -> str | None:
         "program.cs": "Acts as the .NET application entrypoint and host/bootstrap configuration.",
         "appsettings.json": "Defines ASP.NET Core environment and application settings.",
         "tsconfig.json": "Defines TypeScript compiler options and project path aliases.",
-        "requirements.txt": "Documents Python runtime, packaging, and test-time dependency expectations.",
-        "build.bat": "Automates Windows executable packaging through PyInstaller build steps.",
-        "build.sh": "Automates Unix-like executable packaging through PyInstaller build steps.",
+        # requirements.txt, build.bat, build.sh are resolved below with content-aware logic
+        "requirements-build.txt": "Declares build-time tooling for packaging the project on Windows and Unix-like systems.",
+        "contexta.iss": "Defines the Inno Setup installer script for Windows distribution.",
+        "install-contexta.sh": "Installs the packaged binary into a user-local application path.",
         "version_info.txt": "Defines Windows version metadata used in packaged executable builds.",
+        "syntax.py": "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers.",
     }
     if name in exact_name_roles:
         return exact_name_roles[name]
+    # Content-aware generic files: requirements.txt, build scripts
+    if name == "requirements.txt":
+        content_lower = item.content.lower()
+        _contexta_deps = {"pathspec", "tiktoken", "rapidfuzz", "charset-normalizer", "chardet"}
+        if any(dep in content_lower for dep in _contexta_deps):
+            return "Declares runtime dependencies for parsing, token estimation, and repository analysis."
+        return "Declares runtime dependencies and version constraints for the project."
+    if name == "build.bat":
+        if "nuitka" in item.content.lower():
+            return "Automates Windows executable packaging through the Nuitka-based build pipeline."
+        return "Automates Windows build or packaging steps for the project."
+    if name == "build.sh":
+        content_lower = item.content.lower()
+        if "linux" in content_lower and ("tar" in content_lower or "install" in content_lower):
+            return "Automates Unix-like executable packaging and Linux install bundle generation."
+        if "nuitka" in content_lower:
+            return "Automates Unix-like executable packaging through the Nuitka-based build pipeline."
+        return "Automates Unix-like build, packaging, or deployment steps for the project."
     if name.endswith(".spec") and "pyinstaller" in item.content.lower():
         return "Defines the PyInstaller build spec used to package the desktop application."
     if name.startswith("next.config."):
@@ -1351,6 +1465,25 @@ def infer_exact_name_role(item: FileInsight) -> str | None:
         return "Defines Astro build and site-generation configuration."
     if name.startswith("remix.config."):
         return "Defines Remix routing and build configuration."
+    if name.startswith("tailwind.config."):
+        return "Configures Tailwind CSS utility classes, theme tokens, and purge paths."
+    # XML-specific files
+    if name == "androidmanifest.xml":
+        return "Declares Android app components, permissions, features, and entry points."
+    if name in {"applicationcontext.xml", "beans.xml"}:
+        return "Declares Spring beans, dependency injection wiring, and application context configuration."
+    if name == "web.xml":
+        return "Configures the Java web application deployment descriptor (servlets, filters, listeners)."
+    if name == "struts.xml":
+        return "Defines Struts action mappings and MVC flow configuration."
+    if name == "hibernate.cfg.xml":
+        return "Configures Hibernate ORM connection, dialect, and entity mapping settings."
+    if name == "logback.xml" or name == "log4j2.xml" or name == "log4j.xml":
+        return "Configures application logging appenders, patterns, and log levels."
+    if name in {"docker-compose.yml", "docker-compose.yaml"}:
+        return "Defines multi-container Docker service topology, networking, and volumes."
+    if name in {"kubernetes.yml", "k8s.yml", ".github/workflows"} or (name.endswith(".yml") and "/workflows/" in item.relpath.as_posix().lower()):
+        return "Defines CI/CD pipeline or Kubernetes resource configuration."
     return None
 
 
@@ -1469,9 +1602,14 @@ def infer_file_role_with_project_context(item: FileInsight, project_type: str | 
             "context_engine.py": "Implements project analysis, scoring, and smart context selection.",
             "renderer.py": "Formats selected analysis into the final context pack output.",
             "scanner.py": "Scans the project tree, applies filters, and reads safe text content.",
+            "syntax.py": "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers.",
             "ui.py": "Implements the desktop GUI and export workflow orchestration.",
             "cli.py": "Implements the command-line workflow for pack generation and output.",
             "theme.py": "Defines GUI theme palettes and widget repaint behavior.",
+            "requirements.txt": "Declares runtime dependencies for parsing, token estimation, and repository analysis.",
+            "requirements-build.txt": "Declares build-time tooling for packaging the desktop application.",
+            "build.bat": "Automates Windows executable packaging through the build pipeline.",
+            "build.sh": "Automates Unix-like executable packaging and distribution bundle generation.",
         }
         if name in desktop_exact_roles:
             return desktop_exact_roles[name]
@@ -2257,7 +2395,8 @@ def signal_evidence_text(signal: str) -> str:
         "has_manage_py": "`manage.py` Django management script is present.",
         "has_spring_boot": "Spring Boot was detected in Java dependencies.",
         "has_aspnet": "ASP.NET Core signals were detected from NuGet dependencies or Program.cs.",
-        "has_java": "Java source files were detected.",
+        "has_java": "Java or Kotlin source files were detected.",
+        "has_kotlin": "Kotlin source files were detected.",
         "has_csharp": "C# source files were detected.",
         "has_ruby": "Ruby source files were detected.",
         "has_elixir": "Elixir source files were detected.",
@@ -2304,6 +2443,7 @@ def compute_project_type_signals(
 
     has_php = any(item.lang == "php" for item in insights)
     has_java = any(item.lang == "java" for item in insights)
+    has_kotlin = any(item.lang == "kotlin" for item in insights)
     has_csharp = any(item.lang == "csharp" for item in insights)
     has_go = any(item.lang == "go" for item in insights)
     has_rust = any(item.lang == "rust" for item in insights)
@@ -2326,7 +2466,8 @@ def compute_project_type_signals(
         "has_manage_py": any(name == "manage.py" for name in names),
         "has_spring_boot": "Spring Boot" in frameworks,
         "has_aspnet": "ASP.NET Core" in frameworks or "webapplication.createbuilder" in content_blob or "mapcontrollers()" in content_blob,
-        "has_java": has_java,
+        "has_java": has_java or has_kotlin,   # Kotlin projects are JVM-based too
+        "has_kotlin": has_kotlin,
         "has_csharp": has_csharp,
         "has_ruby": has_ruby,
         "has_elixir": has_elixir,
@@ -2391,17 +2532,17 @@ def classify_project_type(signals: dict[str, bool]) -> tuple[str | None, float]:
 def extract_domain_corpus_tokens(insights: list[FileInsight]) -> list[str]:
     tokens: list[str] = []
     for item in insights[:80]:
-        path_tokens = re.findall(r"[A-Za-zÀ-ÿ]{3,}", item.relpath.as_posix().replace("\\", "/"))
+        path_tokens = extract_alpha_tokens(item.relpath.as_posix().replace("\\", "/"))
         symbol_tokens = []
         for name in item.functions[:12] + item.classes[:8]:
-            symbol_tokens.extend(re.findall(r"[A-Z]?[a-zà-ÿ]+|[A-Z]+(?=[A-Z]|$)", name))
+            symbol_tokens.extend(CAMEL_CASE_TOKEN_RE.findall(name))
         visible_text = []
         visible_text.extend(re.findall(r">([^<]{3,80})<", item.content))
         visible_text.extend(re.findall(r'["\']([^"\']{3,80})["\']', item.content[:6000]))
         xml_tokens = re.findall(r"</?([A-Za-z0-9:_-]{3,})", item.content[:6000])
         attr_names = re.findall(r'([A-Za-z0-9:_-]{3,})\s*=', item.content[:6000])
         for chunk in path_tokens + symbol_tokens + visible_text + xml_tokens + attr_names:
-            tokens.extend(re.findall(r"[A-Za-zÀ-ÿ]{3,}", chunk.lower()))
+            tokens.extend(extract_alpha_tokens(chunk.lower()))
     return tokens
 
 
@@ -2409,14 +2550,14 @@ def extract_richer_domain_corpus_tokens(insights: list[FileInsight]) -> list[str
     tokens = extract_domain_corpus_tokens(insights)
     for item in insights[:80]:
         for imported in item.imports[:20]:
-            tokens.extend(re.findall(r"[A-Za-zÃ€-Ã¿]{3,}", imported.replace("\\", "/").lower()))
+            tokens.extend(extract_alpha_tokens(imported.replace("\\", "/").lower()))
         import_mentions = re.findall(
             r"(?:import|from|require|require_once|include|include_once)\s+([A-Za-z_][A-Za-z0-9_]*)",
             item.content[:6000],
             re.IGNORECASE,
         )
         for mention in import_mentions:
-            tokens.extend(re.findall(r"[A-Za-zÃ€-Ã¿]{3,}", mention.lower()))
+            tokens.extend(extract_alpha_tokens(mention.lower()))
     return tokens
 
 
@@ -2424,14 +2565,14 @@ def extract_import_enriched_domain_tokens(insights: list[FileInsight]) -> list[s
     tokens = extract_domain_corpus_tokens(insights)
     for item in insights[:80]:
         for imported in item.imports[:20]:
-            tokens.extend(re.findall(r"[A-Za-z_]{3,}", imported.replace("\\", "/").lower()))
+            tokens.extend(extract_alpha_tokens(imported.replace("\\", "/").lower()))
         import_mentions = re.findall(
             r"(?:import|from|require|require_once|include|include_once)\s+([A-Za-z_][A-Za-z0-9_]*)",
             item.content[:6000],
             re.IGNORECASE,
         )
         for mention in import_mentions:
-            tokens.extend(re.findall(r"[A-Za-z_]{3,}", mention.lower()))
+            tokens.extend(extract_alpha_tokens(mention.lower()))
     return tokens
 
 
@@ -2553,7 +2694,46 @@ def infer_probable_purpose(project_type_label: str | None, domain_label: str | N
         return "Deliver efficient backend services or tooling using Go packages and module-based organization."
     if project_type_label == ".NET application":
         return "Build application functionality using C# and the .NET runtime with NuGet-managed dependencies."
+    if project_type_label == "Kotlin application":
+        return "Build a JVM or Android application using Kotlin modules and Gradle or Maven build tooling."
+    if project_type_label == "Swift application":
+        return "Develop an iOS, macOS, or cross-Apple-platform application using Swift modules and Xcode tooling."
+    if project_type_label == "C/C++ application":
+        return "Implement systems-level, native, or performance-critical application logic using C or C++ modules."
+    if project_type_label == "Scala application":
+        return "Build JVM-based application logic using Scala and functional or object-oriented patterns."
+    if project_type_label == "PHP application":
+        return "Deliver web application functionality using PHP modules and associated server-side tooling."
+    if project_type_label == "Python application":
+        return "Organize Python modules, scripts, and supporting logic into a runnable application."
+    if project_type_label == "JavaScript/TypeScript application":
+        return "Deliver application functionality using JavaScript or TypeScript modules and supporting tooling."
+    if project_type_label == "Developer-facing software project":
+        return "Provide developer tooling, libraries, or utilities organized for software engineering workflows."
     return "Organize project structure and expose the most relevant code paths for developer workflows."
+
+
+def fingerprint_runtime_scope(insights: list[FileInsight]) -> list[FileInsight]:
+    scope = [
+        item
+        for item in insights
+        if "test" not in item.tags and "docs" not in item.tags and "embedded_asset" not in item.tags
+    ]
+    if scope:
+        return scope
+    scope = [item for item in insights if "docs" not in item.tags]
+    return scope or insights
+
+
+def join_content_blob(insights: list[FileInsight], *, lang: str | None = None, limit: int = 60) -> str:
+    parts: list[str] = []
+    for item in insights:
+        if lang and item.lang != lang:
+            continue
+        parts.append(item.content.lower())
+        if len(parts) >= limit:
+            break
+    return "\n".join(parts)
 
 
 def detect_project_fingerprint(
@@ -2561,10 +2741,14 @@ def detect_project_fingerprint(
     insights: list[FileInsight],
     entrypoints: list[FileInsight],
 ) -> ProjectFingerprint:
-    by_rel, by_name = fingerprint_file_lookup(insights)
-    lower_names = {item.path.name.lower() for item in insights}
-    lower_dirs = {item.relpath.parts[0].lower() for item in insights if item.relpath.parts}
-    content_blob = "\n".join(item.content.lower() for item in insights[:60])
+    scope = fingerprint_runtime_scope(insights)
+    by_rel, by_name = fingerprint_file_lookup(scope)
+    lower_names = {item.path.name.lower() for item in scope}
+    lower_dirs = {item.relpath.parts[0].lower() for item in scope if item.relpath.parts}
+    content_blob = join_content_blob(scope)
+    python_blob = join_content_blob(scope, lang="python")
+    java_blob = join_content_blob(scope, lang="java")
+    csharp_blob = join_content_blob(scope, lang="csharp")
 
     language_scores: Counter[str] = Counter()
     frameworks: list[str] = []
@@ -2592,7 +2776,7 @@ def detect_project_fingerprint(
         if marker and marker not in evidence_sources:
             evidence_sources.append(marker)
 
-    for item in insights:
+    for item in scope:
         if not item.lang:
             continue
         language_scores[item.lang] += CODE_LANGUAGE_WEIGHTS.get(item.lang, 0.8)
@@ -2614,7 +2798,7 @@ def detect_project_fingerprint(
         elif "yarn.lock" in lower_names or str(package_manager_value).startswith("yarn@"):
             package_manager_label = "Yarn"
         push(package_managers, package_manager_label)
-        language_scores["typescript" if ("typescript" in deps or any(item.lang in {"typescript", "tsx"} for item in insights)) else "javascript"] += 10.0
+        language_scores["typescript" if ("typescript" in deps or any(item.lang in {"typescript", "tsx"} for item in scope)) else "javascript"] += 10.0
         note(f"`package.json` defines the JavaScript/TypeScript dependency graph via {package_manager_label}.")
         if "next" in deps:
             push(frameworks, "Next.js")
@@ -2960,7 +3144,21 @@ def detect_project_fingerprint(
         if "urls.py" in lower_names:
             source("urls.py")
 
-    if "@app.route" in content_blob or "flask(" in content_blob or "blueprint(" in content_blob:
+    # Content-based Python framework detection (when no manifest is present)
+    if "Django" not in frameworks:
+        django_patterns = (
+            r"from\s+django[.\s]",
+            r"import\s+django\b",
+            r"django\.db\.models",
+            r"models\.Model",
+        )
+        if any(re.search(p, item.content, re.MULTILINE) for item in scope if item.lang == "python" for p in django_patterns):
+            push(frameworks, "Django")
+            push(runtime, "Server")
+            language_scores["python"] += 3.0
+            note("Django imports were detected in Python source files.", "project_type")
+
+    if "@app.route" in python_blob or "flask(" in python_blob or "blueprint(" in python_blob:
         if "Flask" not in frameworks:
             push(frameworks, "Flask")
             push(runtime, "Server")
@@ -2971,12 +3169,12 @@ def detect_project_fingerprint(
         source("Program.cs")
     if "appsettings.json" in lower_names:
         source("appsettings.json")
-        if "ASP.NET Core" not in frameworks and ("webapplication.createbuilder" in content_blob or "mapcontrollers()" in content_blob):
+        if "ASP.NET Core" not in frameworks and ("webapplication.createbuilder" in csharp_blob or "mapcontrollers()" in csharp_blob):
             push(frameworks, "ASP.NET Core")
             push(runtime, "Server")
             note("Program.cs and appsettings.json suggest an ASP.NET Core application.", "project_type")
 
-    if "@springbootapplication" in content_blob or "@restcontroller" in content_blob:
+    if "@springbootapplication" in java_blob or "@restcontroller" in java_blob:
         if "Spring Boot" not in frameworks and "Spring Framework" not in frameworks:
             push(frameworks, "Spring Boot")
             push(runtime, "Server")
@@ -2990,13 +3188,13 @@ def detect_project_fingerprint(
             push(runtime, "Android")
             note("`AndroidManifest.xml` was detected.", "project_type")
 
-    if any("tkinter" in item.content.lower() for item in insights if item.lang == "python"):
+    if any("tkinter" in item.content.lower() for item in scope if item.lang == "python"):
         push(frameworks, "Tkinter")
         push(runtime, "Desktop GUI")
         language_scores["python"] += 4.0
         note("Tkinter imports were detected in Python source files.", "project_type")
         source("Tkinter imports")
-    if any("cli" in item.tags for item in insights) or "argparse" in content_blob or "sys.argv" in content_blob:
+    if any("cli" in item.tags for item in scope) or "argparse" in content_blob or "sys.argv" in content_blob:
         push(runtime, "CLI")
         note("CLI-oriented files or argparse/sys.argv usage were detected.", "project_type")
     if "dockerfile" in lower_names:
@@ -3042,7 +3240,7 @@ def detect_project_fingerprint(
         source("tests/")
 
     signals = compute_project_type_signals(
-        insights,
+        scope,
         frameworks,
         runtime,
         package_managers,
@@ -3051,7 +3249,7 @@ def detect_project_fingerprint(
         entrypoints,
     )
     project_type_key, project_type_score = classify_project_type(signals)
-    domain_label, domain_score = detect_domain_label(insights)
+    domain_label, domain_score = detect_domain_label(scope)
 
     project_type = PROJECT_TYPE_LABELS.get(project_type_key)
     probable_purpose = infer_probable_purpose(project_type, domain_label)
@@ -3060,7 +3258,7 @@ def detect_project_fingerprint(
             if signals.get(signal):
                 note(signal_evidence_text(signal), "project_type")
 
-    stems = {item.path.stem.lower() for item in insights}
+    stems = {item.path.stem.lower() for item in scope}
     if "python" in language_scores and {"scanner", "renderer", "ui", "cli"} <= stems:
         project_type = "Desktop GUI + CLI developer tool"
         probable_purpose = "Scan local repositories and generate curated context packs for AI workflows."
@@ -3101,10 +3299,14 @@ def detect_project_fingerprint(
             project_type = "Go application"
         elif any(framework in frameworks for framework in {"Actix Web", "Axum", "Rocket"}):
             project_type = "Rust application"
-        elif "java" in language_scores and ("Maven" in package_managers or "Gradle" in package_managers):
-            project_type = "Java application"
+        elif ("java" in language_scores or "kotlin" in language_scores) and ("Maven" in package_managers or "Gradle" in package_managers):
+            project_type = "Kotlin application" if "kotlin" in language_scores and "java" not in language_scores else "Java application"
+        elif "kotlin" in language_scores:
+            project_type = "Kotlin application"
         elif "php" in language_scores and "Composer" in package_managers:
             project_type = "PHP application"
+        elif "swift" in language_scores:
+            project_type = "Swift application"
         elif "typescript" in language_scores or "javascript" in language_scores:
             project_type = "JavaScript/TypeScript application"
         elif "python" in language_scores:
@@ -3115,8 +3317,35 @@ def detect_project_fingerprint(
             project_type = "Go application"
         elif "csharp" in language_scores:
             project_type = ".NET application"
+        elif "cpp" in language_scores or "c" in language_scores:
+            project_type = "C/C++ application"
+        elif "scala" in language_scores:
+            project_type = "Scala application"
         else:
             project_type = "Developer-facing software project"
+
+    # Boost domain detection from directory names (for projects where content alone isn't enough)
+    if not domain_label or domain_score < 3:
+        dir_domain_hints = {
+            "task_management": {"kanban", "boards", "board", "tasks", "sprints", "backlog", "tickets", "issues", "workflow"},
+            "ecommerce": {"cart", "checkout", "products", "catalog", "orders", "payments", "inventory", "store"},
+            "education": {"students", "alunos", "courses", "cursos", "classroom", "enrollment", "grades", "lessons"},
+            "admin_panel": {"dashboard", "admin", "reports", "analytics", "permissions"},
+            "healthcare": {"patients", "appointments", "medical", "hospital", "clinic", "prescriptions"},
+            "finance": {"invoices", "payments", "transactions", "billing", "ledger", "accounting"},
+            "social": {"feeds", "posts", "comments", "messages", "notifications", "profiles"},
+            "image_editing": {"layers", "canvas", "filters", "brushes", "palettes", "raster"},
+            "graph_analysis": {"graphs", "nodes", "edges", "networks", "layouts", "clustering"},
+        }
+        for dlabel, keywords in dir_domain_hints.items():
+            if keywords & lower_dirs:
+                matching = keywords & lower_dirs
+                note(f"Directory structure suggests `{dlabel}` behavior (found: {', '.join(sorted(matching))}).", "purpose")
+                if not domain_label or domain_score < 3:
+                    domain_label = dlabel
+                    domain_score = max(domain_score, 3)
+                    probable_purpose = infer_probable_purpose(project_type, domain_label)
+                break
 
     if domain_label and domain_score >= 2:
         note(f"Domain vocabulary suggests `{domain_label}` behavior.", "purpose")
@@ -3153,7 +3382,10 @@ def detect_project_fingerprint(
         preferred = max(language_scores.items(), key=lambda item: item[1])
         primary_language = TECH_LABELS.get(preferred[0], preferred[0].title())
         if primary_language in {"React", "Next.js", "Vue", "Laravel"}:
-            primary_language = "TypeScript" if any(item.lang in {"typescript", "tsx"} for item in insights) else "JavaScript"
+            primary_language = "TypeScript" if any(item.lang in {"typescript", "tsx"} for item in scope) else "JavaScript"
+        # If both Java and Kotlin exist, surface Kotlin as primary when it dominates
+        if primary_language == "Java" and "kotlin" in language_scores and language_scores["kotlin"] > language_scores.get("java", 0):
+            primary_language = "Kotlin"
 
     confidence = min(
         0.98,
@@ -3192,6 +3424,7 @@ def normalize_supporting_technologies(raw: list[str]) -> list[str]:
         "desktop gui interface": "Tkinter desktop interface",
         "cli workflow": "CLI workflow",
         "pyinstaller": "optional PyInstaller packaging",
+        "nuitka": "Nuitka Windows packaging",
         "typescript compiler": "TypeScript",
         "npm": "npm-based workflow",
         "pnpm": "pnpm-based workflow",
@@ -3217,6 +3450,7 @@ def normalize_supporting_technologies(raw: list[str]) -> list[str]:
 
 def detect_supporting_technologies(insights: list[FileInsight], fingerprint: ProjectFingerprint) -> list[str]:
     raw: list[str] = []
+    main_dependencies = {entry.lower() for entry in fingerprint.main_dependencies}
 
     def push(value: str) -> None:
         if value not in raw:
@@ -3230,6 +3464,16 @@ def detect_supporting_technologies(insights: list[FileInsight], fingerprint: Pro
         push("Tkinter desktop interface" if "Tkinter" in fingerprint.frameworks else "Desktop GUI interface")
     if "CLI" in fingerprint.runtime:
         push("CLI workflow")
+    if "tiktoken" in main_dependencies:
+        push("token-aware pack sizing")
+    if any(dep.startswith("tree-sitter") for dep in main_dependencies):
+        push("syntax-aware parsing")
+    if "rapidfuzz" in main_dependencies:
+        push("fuzzy relationship scoring")
+    if "pathspec" in main_dependencies:
+        push("git-style ignore matching")
+    if "charset-normalizer" in main_dependencies:
+        push("robust charset detection")
     for manager in fingerprint.package_managers:
         if manager in {"Composer", "Poetry", "Cargo", "Go modules", "NuGet", "Maven", "Gradle", "Bundler", "Mix", "pub"}:
             push(manager)
@@ -3262,14 +3506,29 @@ def detect_supporting_technologies(insights: list[FileInsight], fingerprint: Pro
 
 def detect_quality_signals(insights: list[FileInsight]) -> list[str]:
     signals: list[str] = []
+    test_items = [item for item in insights if "test" in item.tags or is_test_file(item.relpath)]
+    config_items = [
+        item
+        for item in insights
+        if item.path.name.lower() in {"pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml"}
+    ]
 
     def push(value: str) -> None:
         if value not in signals:
             signals.append(value)
 
-    if any("unittest" in item.content.lower() for item in insights[:40]):
+    if any(
+        re.search(r"\bimport\s+unittest\b|\bunittest\.testcase\b|\btestcase\s*\(", item.content, re.IGNORECASE)
+        for item in test_items
+    ):
         push("unittest-based test suite")
-    if any("pytest" in item.content.lower() for item in insights[:40]):
+    if any(
+        re.search(r"^\s*(?:import\s+pytest\b|from\s+pytest\s+import\b|@pytest\.|\bpytestmark\b)", item.content, re.IGNORECASE | re.MULTILINE)
+        for item in test_items
+    ) or any(
+        re.search(r"\[tool\.pytest\.ini_options\]|\bpytest\b", item.content, re.IGNORECASE)
+        for item in config_items
+    ):
         push("pytest-based test coverage")
     return signals[:4]
 

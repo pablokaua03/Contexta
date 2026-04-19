@@ -26,7 +26,7 @@ from contexta_app.renderer import (
 class TestTokenEstimation(unittest.TestCase):
     def test_estimate_basic(self):
         self.assertEqual(estimate_tokens("abcd"), 1)
-        self.assertEqual(estimate_tokens("a" * 4000), 1000)
+        self.assertEqual(estimate_tokens("a" * 4000), 500)
 
     def test_token_label_small(self):
         label = token_label(5_000)
