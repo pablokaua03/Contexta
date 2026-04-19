@@ -88,6 +88,7 @@ COMPRESSION_HELP = {
     "balanced": "Mix summaries, key excerpts, and full payloads for the most important files.",
     "focused": "Trim aggressively and keep only the parts most likely to matter for the task.",
     "signatures": "Prefer structural summaries and signatures when you need a rapid, low-token project map.",
+    "lean": "Minimum token usage: metadata and up to 5 signatures per file. Inline blobs and large literals are always omitted. Best for quick orientation or API budget constraints.",
 }
 
 OPTION_GUIDE = (
@@ -194,6 +195,7 @@ def estimate_tokens_for_preview(selected_files: int, compression_key: str) -> in
         "balanced": 430,
         "focused": 230,
         "signatures": 130,
+        "lean": 65,
     }.get(compression_key, 430)
     overhead = 1400
     return max(0, overhead + (selected_files * per_file))

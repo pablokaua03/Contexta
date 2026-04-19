@@ -4,6 +4,7 @@ renderer.py - Context pack rendering and token estimation for Contexta.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +65,56 @@ def token_label(n: int) -> str:
     else:
         hint = "very large pack; prefer long-context workflows or a tighter export"
     return f"~{n/1000:.1f}k tokens (rough estimate: {hint})"
+
+
+_BLOB_LINE_MIN_CHARS = 400
+_BLOB_B64_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+)
+_BLOB_ASSIGN_RE = re.compile(r"^\s*\w+\s*=\s*[bBrRuU]?[\"']")
+
+
+def _is_blob_line(line: str) -> bool:
+    """Return True if *line* looks like an embedded blob literal."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    # Variable assigned a long string literal
+    if _BLOB_ASSIGN_RE.match(stripped):
+        return True
+    # A pure string continuation (multi-line base64 payload)
+    sample = stripped.strip("\"'").replace("\n", "")[:600]
+    if len(sample) > 200:
+        ratio = sum(1 for c in sample if c in _BLOB_B64_CHARS) / len(sample)
+        if ratio > 0.92:
+            return True
+    return False
+
+
+def sanitize_inline_blobs(content: str) -> tuple[str, int]:
+    """
+    Collapse lines that look like large embedded blobs (base64 payloads,
+    binary literals, icon data, etc.) into a single placeholder comment.
+
+    Returns ``(sanitized_content, number_of_blobs_collapsed)``.
+    Applied to every compression mode — a 15 000-char base64 constant adds
+    zero semantic value to any review.
+    """
+    lines = content.splitlines(keepends=True)
+    result: list[str] = []
+    collapsed = 0
+    for line in lines:
+        raw = line.rstrip("\n\r")
+        if len(raw) > _BLOB_LINE_MIN_CHARS and _is_blob_line(raw):
+            indent = len(raw) - len(raw.lstrip())
+            pad = raw[:indent]
+            result.append(
+                f"{pad}# [large embedded payload omitted — {len(raw):,} chars]\n"
+            )
+            collapsed += 1
+        else:
+            result.append(line)
+    return "".join(result), collapsed
 
 
 def render_tree_ascii(node: dict, prefix: str = "", is_root: bool = True) -> str:
@@ -249,9 +300,14 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
     signatures = extract_signatures(item)
     focus_query = config.focus_query or config.system_prompt
 
+    # Always sanitize inline blobs regardless of compression mode.
+    # A 15 000-char base64 constant adds zero semantic value to any review.
+    clean_content, _blobs_removed = sanitize_inline_blobs(item.content)
+
     if config.context_mode == "onboarding":
         excerpt_lines = 28 if "entrypoint" in item.tags or item.score >= 9 else 18
         excerpt, reason = extract_relevant_excerpt(item, focus_query, excerpt_lines)
+        excerpt, _ = sanitize_inline_blobs(excerpt)
         if signatures:
             parts.append("\n```text")
             parts.extend(signatures[:5])
@@ -262,8 +318,20 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
 
     if "embedded_asset" in item.tags:
         excerpt, reason = extract_relevant_excerpt(item, focus_query, 24)
+        excerpt, _ = sanitize_inline_blobs(excerpt)
         parts.append(f"\n> {reason}")
         parts.append(f"\n```{item.lang or 'text'}\n{excerpt}\n```")
+        return "\n".join(parts) + "\n"
+
+    if config.compression == "lean":
+        # Minimum-token mode: metadata + up to 5 signatures. No code excerpts
+        # unless the file is a critical entrypoint with a very low line count.
+        if signatures:
+            parts.append("\n```text")
+            parts.extend(signatures[:5])
+            parts.append("```")
+        elif item.score >= 10 and item.line_count <= 60:
+            parts.append(f"\n```{item.lang or 'text'}\n{clean_content}\n```")
         return "\n".join(parts) + "\n"
 
     if config.compression == "signatures":
@@ -273,6 +341,7 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
             parts.append("```")
         else:
             excerpt, reason = extract_relevant_excerpt(item, focus_query, 40)
+            excerpt, _ = sanitize_inline_blobs(excerpt)
             parts.append(f"\n> {reason}")
             parts.append(f"\n```{item.lang or 'text'}\n{excerpt}\n```")
         return "\n".join(parts) + "\n"
@@ -280,6 +349,7 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
     if config.compression == "focused":
         if item.matched_focus or item.score >= 9 or "entrypoint" in item.tags:
             excerpt, reason = extract_relevant_excerpt(item, focus_query, 80)
+            excerpt, _ = sanitize_inline_blobs(excerpt)
             if signatures:
                 parts.append("\n```text")
                 parts.extend(signatures[:10])
@@ -292,18 +362,19 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
             parts.append("```")
         else:
             excerpt, reason = extract_relevant_excerpt(item, focus_query, 30)
+            excerpt, _ = sanitize_inline_blobs(excerpt)
             parts.append(f"\n> {reason}")
             parts.append(f"\n```{item.lang or 'text'}\n{excerpt}\n```")
         return "\n".join(parts) + "\n"
 
     if config.compression == "balanced":
         if item.line_count <= 180 or item.score >= 9:
-            body = item.content
             if item.truncated:
                 parts.append(f"\n> File has {item.line_count} total lines; exported the first {item.rendered_line_count} lines.")
-            parts.append(f"\n```{item.lang or 'text'}\n{body}\n```")
+            parts.append(f"\n```{item.lang or 'text'}\n{clean_content}\n```")
         else:
             excerpt, reason = extract_relevant_excerpt(item, focus_query, 90)
+            excerpt, _ = sanitize_inline_blobs(excerpt)
             if signatures:
                 parts.append("\n```text")
                 parts.extend(signatures[:12])
@@ -312,9 +383,10 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
             parts.append(f"\n```{item.lang or 'text'}\n{excerpt}\n```")
         return "\n".join(parts) + "\n"
 
+    # full mode — keep everything but still collapse inline blobs
     if item.truncated:
         parts.append(f"\n> File has {item.line_count} total lines; exported the first {item.rendered_line_count} lines.")
-    parts.append(f"\n```{item.lang or 'text'}\n{item.content}\n```")
+    parts.append(f"\n```{item.lang or 'text'}\n{clean_content}\n```")
     return "\n".join(parts) + "\n"
 
 

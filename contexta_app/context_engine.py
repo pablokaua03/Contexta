@@ -54,6 +54,7 @@ COMPRESSION_OPTIONS: dict[str, str] = {
     "balanced": "Balanced Compression",
     "focused": "Focused Compression",
     "signatures": "Signatures Only",
+    "lean": "Token-Lean",
 }
 
 PACK_OPTIONS: dict[str, str] = {
