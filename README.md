@@ -68,7 +68,7 @@ Use it when you want to:
 | GUI + CLI | Desktop workflow for everyday use, plus command-line usage for scripting |
 | Context packs | `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related` |
 | Context modes | `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
-| Compression modes | `full`, `balanced`, `focused`, `signatures` |
+| Compression modes | `full`, `balanced`, `focused`, `signatures`, `lean` |
 | Task-aware output | Shapes the export for explanation, bug reports, code review, risk analysis, refactors, tests, dead-code hunting, or AI handoff |
 | Project fingerprinting | Detects stack, frameworks, and project type before selecting files |
 | Relationship map | Highlights local dependencies and likely related tests |
@@ -76,7 +76,9 @@ Use it when you want to:
 | Selection reasons | Explains why each file was included in the payload |
 | Read This First + Main Flow | Makes the pack easier for humans and models to navigate |
 | Token guidance | Uses `tiktoken`-backed estimates for tighter compression and safer pack sizing |
+| Inline blob protection | Automatically collapses base64/binary literals in all compression modes — no more 15 000-char icon blobs polluting the export |
 | Syntax-aware analysis | Uses tree-sitter plus heuristic fallback to extract symbols across multiple languages |
+| Multi-language detection | Recognizes Django, Kotlin Android, Spring Boot, Flutter, Rails, React, and more from project structure and import patterns |
 | Build pipeline | Uses Nuitka for Windows and PyInstaller plus a Linux install bundle for Unix builds |
 
 ---
@@ -104,10 +106,11 @@ Use it when you want to:
 
 ### Compression modes
 
-- `full`: keeps fuller file bodies and prioritizes fidelity
+- `full`: keeps fuller file bodies and prioritizes fidelity (inline blobs still collapsed)
 - `balanced`: mixes narrative, excerpts, and full payloads for important files
 - `focused`: trims aggressively around the current task/focus
 - `signatures`: structural overview for quick scanning
+- `lean`: minimum token usage — metadata and up to 5 signatures per file (~65 tokens/file)
 
 ---
 

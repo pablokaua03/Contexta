@@ -54,8 +54,9 @@ No modo `full`, o código continua presente. A inteligência entra em volta do p
 | GUI + CLI | Fluxo desktop para uso diário e CLI para automação |
 | Packs de contexto | `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related` |
 | Modos de contexto | `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
-| Compressão | `full`, `balanced`, `focused`, `signatures` |
-| Fingerprinting | Detecta stack, framework e tipo de projeto antes de selecionar arquivos |
+| Compressão | `full`, `balanced`, `focused`, `signatures`, `lean` |
+| Fingerprinting | Detecta stack, framework e tipo de projeto antes de selecionar arquivos — Django, Kotlin Android, Spring Boot, Flutter e mais |
+| Proteção contra blobs | Colapsa automaticamente literais base64/binários em todos os modos de compressão |
 | Análise syntax-aware | Usa tree-sitter com fallback heurístico para extrair símbolos em várias linguagens |
 | Estimativa de tokens | Usa `tiktoken` para estimar melhor o tamanho dos packs |
 | Relationship map | Destaca dependências locais e testes provavelmente relacionados |
