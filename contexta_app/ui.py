@@ -986,6 +986,20 @@ class App(tk.Tk):
         self.extension_slot.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         reg(self.extension_slot, lambda w: w.configure(bg=C["bg"]))
 
+        mcp_card = Card(left)
+        mcp_card.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        mcp_inner = mcp_card.inner()
+        self._section(mcp_inner, "MCP Server Setup", "Auto-configure Contexta as a tool server for your AI editor.").pack(anchor="w")
+        mcp_btns = tk.Frame(mcp_inner, bg=C["card"])
+        mcp_btns.pack(fill="x", pady=(12, 0))
+        reg(mcp_btns, lambda w: w.configure(bg=C["card"]))
+        FlatBtn(mcp_btns, "Claude Code", "accent_dk", self._setup_claude_code, font=FBS, surface_key="card").pack(side="left", padx=(0, 8))
+        FlatBtn(mcp_btns, "Cursor", "violet", self._setup_cursor, font=FBS, surface_key="card").pack(side="left", padx=(0, 8))
+        FlatBtn(mcp_btns, "Windsurf", "green", self._setup_windsurf, font=FBS, surface_key="card").pack(side="left")
+        mcp_hint = tk.Label(mcp_inner, text="Writes the MCP config so the editor can call Contexta as a tool server. Restart the editor after setup.", font=FT, bg=C["card"], fg=C["text3"], wraplength=360, justify="left")
+        mcp_hint.pack(anchor="w", pady=(10, 0))
+        reg(mcp_hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+
     def _build_preview(self, parent):
         self._reader = Card(parent, pad=14)
         self._reader.grid(row=0, column=0, sticky="nsew")
@@ -1752,3 +1766,40 @@ class App(tk.Tk):
         reg(close_row, lambda w: w.configure(bg=C["bg"]))
         close_btn = FlatBtn(close_row, "Close", "accent", self._help_window.destroy, font=FBS, surface_key="bg", variant="ghost")
         close_btn.pack(anchor="e")
+
+    def _get_mcp_entry(self) -> dict:
+        mcp_script = Path(__file__).resolve().parent.parent / "contexta_mcp.py"
+        python_cmd = sys.executable
+        return {
+            "command": python_cmd.replace("\\", "/"),
+            "args": [str(mcp_script).replace("\\", "/")],
+        }
+
+    def _write_mcp_config(self, config_path: Path, editor_name: str):
+        import json
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if config_path.exists():
+            try:
+                existing = json.loads(config_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        if "mcpServers" not in existing:
+            existing["mcpServers"] = {}
+        existing["mcpServers"]["contexta"] = self._get_mcp_entry()
+        config_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        self._log_write(f"MCP configured for {editor_name}: {config_path}", "ok")
+        messagebox.showinfo("Contexta", f"MCP server configured for {editor_name}.\n\nConfig: {config_path}\n\nRestart {editor_name} to activate.")
+
+    def _setup_claude_code(self):
+        config_path = Path.home() / ".claude" / ".mcp.json"
+        self._write_mcp_config(config_path, "Claude Code")
+
+    def _setup_cursor(self):
+        config_path = Path.home() / ".cursor" / "mcp.json"
+        self._write_mcp_config(config_path, "Cursor")
+
+    def _setup_windsurf(self):
+        config_path = Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
+        self._write_mcp_config(config_path, "Windsurf")
