@@ -51,7 +51,7 @@ class IndexMatchesBruteForceTests(unittest.TestCase):
             self.insights = insights
             return spy(insights, module_map)
 
-        with patch.object(ce, "resolve_local_relationships", capture):
+        with patch("contexta_app.engine.pipeline.resolve_local_relationships", capture):
             ce.build_analysis(self.root, tree, [], ce.ExportConfig(context_mode="full"), QUIET)
 
     def tearDown(self):
