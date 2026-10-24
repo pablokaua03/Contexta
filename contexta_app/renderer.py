@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -23,11 +23,13 @@ from contexta_app.context_engine import (
     TASK_PROFILE_OPTIONS,
     ExportConfig,
     build_analysis,
+    resolve_config,
     extract_relevant_excerpt,
     extract_signatures,
     related_test_score,
 )
 from contexta_app.redaction import redact_secrets
+from contexta_app.selector import fit_to_budget, tiers_for
 from contexta_app.scanner import (
     GitError,
     build_diff_tree,
@@ -327,6 +329,9 @@ def render_selection_reasons(reasons: list[str], config: ExportConfig | None = N
 
 
 def render_file_section(item, config: ExportConfig, include_score_details: bool = False) -> str:
+    override = getattr(item, "render_compression", None)
+    if override and override != config.compression:
+        config = replace(config, compression=override)
     rel = item.relpath.as_posix()
     tags = ", ".join(sorted(item.tags)) if item.tags else "general"
     size_label = f"{item.line_count} lines"
@@ -610,6 +615,14 @@ def build_read_this_first(analysis) -> list[str]:
         if rel not in seen:
             ordered.append(item)
             seen.add(rel)
+
+    if analysis.config.focus_query.strip():
+        focused = sorted(
+            (item for item in analysis.selected_files if item.matched_focus and "test" not in item.tags and "docs" not in item.tags),
+            key=lambda item: (-item.focus_raw, -item.score, item.relpath.as_posix()),
+        )
+        for item in focused[:3]:
+            push(item)
 
     for item in analysis.entrypoints[:1]:
         push(item)
@@ -1086,6 +1099,14 @@ def build_read_this_first(analysis) -> list[str]:
             ordered.append(item)
             seen.add(rel)
 
+    if analysis.config.focus_query.strip():
+        focused = sorted(
+            (item for item in analysis.selected_files if item.matched_focus and "test" not in item.tags and "docs" not in item.tags),
+            key=lambda item: (-item.focus_raw, -item.score, item.relpath.as_posix()),
+        )
+        for item in focused[:3]:
+            push(item)
+
     for item in analysis.entrypoints[:1]:
         push(item)
 
@@ -1271,6 +1292,7 @@ SECTION_SPECS: dict[str, SectionSpec] = {
     "ignored_context": SectionSpec("ignored_context", "What Can Be Ignored"),
     "suggested_prompts": SectionSpec("suggested_prompts", "Suggested Prompts for AI"),
     "context_payload": SectionSpec("context_payload", "Context Payload", "payload"),
+    "token_budget": SectionSpec("token_budget", "Token Budget"),
 }
 
 
@@ -1676,7 +1698,7 @@ def _render_raw_files(
     )
 
 
-def generate_markdown(
+def _generate_markdown_once(
     project_path: Path,
     include_hidden: bool = False,
     include_unknown: bool = False,
@@ -1695,6 +1717,8 @@ def generate_markdown(
     locked_fields: tuple[str, ...] = (),
     stats: dict | None = None,
     max_files: int | None = None,
+    payload_budget: int | None = None,
+    token_budget: int | None = None,
 ) -> str:
     if log_cb is None:
         log_cb = lambda msg, tag="": None
@@ -1712,6 +1736,7 @@ def generate_markdown(
         pack_profile=pack_profile,
         focus_query=focus_query,
         locked_fields=locked_fields,
+        token_budget=token_budget,
     )
 
     gitignore_patterns = load_gitignore_patterns(project_path)
@@ -1745,7 +1770,13 @@ def generate_markdown(
         max_files,
     )
 
-    analysis = build_analysis(project_path, full_tree, changed_files, config, log_cb)
+    fit_selection = None
+    if payload_budget is not None:
+        fit_selection = _budget_fitter(resolve_config(config), payload_budget, log_cb)
+    analysis = build_analysis(project_path, full_tree, changed_files, config, log_cb, fit_selection=fit_selection)
+    if stats is not None and analysis.budget_report:
+        stats["budget_report"] = analysis.budget_report
+        stats["dropped"] = [item.relpath.as_posix() for item in analysis.dropped_files]
 
     if config.pack_profile == "raw_files":
         return _render_raw_files(
@@ -1860,7 +1891,11 @@ def generate_markdown(
         "context_payload": payload_files,
     }
 
-    for key in section_keys_for_analysis(analysis):
+    section_content["token_budget"] = build_token_budget_lines(analysis)
+    keys = list(section_keys_for_analysis(analysis))
+    if analysis.budget_report:
+        keys.insert(keys.index("context_payload") if "context_payload" in keys else len(keys), "token_budget")
+    for key in keys:
         spec = SECTION_SPECS[key]
         render_section(md, spec, section_content.get(key), analysis.config)
 
@@ -1873,6 +1908,154 @@ def generate_markdown(
         stats=stats,
         compression=analysis.config.compression,
     )
+
+
+BUDGET_OVERHEAD_FIRST_GUESS = 3_500
+BUDGET_MAX_ATTEMPTS = 4
+BUDGET_PER_FILE_OVERHEAD = 45
+
+
+_SAMPLE_DIRS = frozenset({"examples", "example", "samples", "sample", "demo", "demos", "docs_src", "fixtures", "benchmarks", "vendor", "third_party"})
+_MANIFEST_NAMES = frozenset({"pyproject.toml", "requirements.txt", "package.json", "composer.json", "cargo.toml", "go.mod", "pom.xml", "setup.py", "setup.cfg"})
+
+
+def budget_priority(item) -> float:
+    """Higher is more worth keeping when a budget forces a cut."""
+    value = float(item.score) + 1.5 * float(getattr(item, "focus_raw", 0.0))
+    parts = item.relpath.parts
+    if _SAMPLE_DIRS & {part.lower() for part in parts[:-1]}:
+        value -= 5.0
+    if len(parts) > 1 and item.path.name.lower() in _MANIFEST_NAMES:
+        value -= 4.0
+    if "entrypoint" in item.tags:
+        value += 3.0
+    if "test" in item.tags:
+        value -= 3.0
+    if "docs" in item.tags:
+        value -= 6.0
+    return value
+
+
+def _budget_fitter(config: ExportConfig, payload_budget: int, log_cb):
+    """Return a ``fit_selection`` hook for ``build_analysis`` that enforces ``payload_budget``."""
+    tiers = tiers_for(config.compression)
+
+    def cost(item, tier: str) -> int:
+        previous = item.render_compression
+        item.render_compression = tier
+        try:
+            text = render_file_section(item, config)
+        finally:
+            item.render_compression = previous
+        return estimate_tokens(text) + BUDGET_PER_FILE_OVERHEAD
+
+    def fit(selected: list):
+        ranked = sorted(selected, key=lambda item: (-budget_priority(item), item.relpath.as_posix()))
+        result = fit_to_budget(ranked, payload_budget, cost, tiers)
+        tier_by_id = {id(item): tier for item, tier in result.kept}
+        for item in selected:
+            if id(item) in tier_by_id:
+                item.render_compression = tier_by_id[id(item)]
+        kept = [item for item in selected if id(item) in tier_by_id]
+        dropped = [item for item in ranked if id(item) not in tier_by_id]
+        report = {
+            "payload_budget": payload_budget,
+            "estimated_payload_tokens": result.used,
+            "candidates": len(selected),
+            "kept": len(kept),
+            "dropped": len(dropped),
+            "tiers": result.tier_counts(),
+        }
+        log_cb(
+            f"Budget fit: kept {len(kept)} of {len(selected)} selected file(s), dropped {len(dropped)}.",
+            "info" if not dropped else "warn",
+        )
+        return kept, dropped, report
+
+    return fit
+
+
+def build_token_budget_lines(analysis) -> list[str]:
+    report = analysis.budget_report
+    if not report:
+        return []
+    tiers = report.get("tiers") or {}
+    detail = ", ".join(f"{count} at {name}" for name, count in tiers.items())
+    lines = [
+        f"Token budget: **{analysis.config.token_budget:,}**. "
+        f"Kept **{report['kept']}** of **{report['candidates']}** candidate file(s)"
+        + (f" ({detail})." if detail else "."),
+    ]
+    dropped = analysis.dropped_files
+    if dropped:
+        shown = ", ".join(f"`{item.relpath.as_posix()}`" for item in dropped[:12])
+        extra = f", and {len(dropped) - 12} more" if len(dropped) > 12 else ""
+        lines.append(f"Left out to fit (highest priority first): {shown}{extra}.")
+        lines.append("Raise `--budget`, or use `--focus \"topic\"` to spend it on the part you care about.")
+    else:
+        lines.append("Nothing was left out.")
+    return lines
+
+
+def generate_markdown(
+    project_path: Path,
+    *args,
+    token_budget: int | None = None,
+    stats: dict | None = None,
+    **kwargs,
+) -> str:
+    """Build a context pack. With ``token_budget`` the pack is cut to fit it.
+
+    Files are ranked, then kept at full, signature or lean detail until the
+    budget is used. The first pass guesses how many tokens the sections around
+    the files take. If the finished pack is over budget, the measured overhead
+    replaces the guess and the selection is redone.
+    """
+    if not token_budget:
+        return _generate_markdown_once(project_path, *args, stats=stats, **kwargs)
+    if token_budget <= 0:
+        raise ValueError("token budget must be a positive integer")
+
+    log_cb = kwargs.get("log_cb") or (lambda msg, tag="": None)
+    overhead = min(BUDGET_OVERHEAD_FIRST_GUESS, int(token_budget * 0.45))
+    best: tuple[str, dict] | None = None
+    last: tuple[str, dict] | None = None
+    for attempt in range(1, BUDGET_MAX_ATTEMPTS + 1):
+        run_stats: dict = {}
+        payload_budget = max(100, token_budget - overhead)
+        text = _generate_markdown_once(
+            project_path,
+            *args,
+            stats=run_stats,
+            payload_budget=payload_budget,
+            token_budget=token_budget,
+            **{**kwargs, "log_cb": log_cb},
+        )
+        last = (text, run_stats)
+        tokens = int(run_stats.get("tokens") or 0)
+        report = run_stats.get("budget_report") or {}
+        if tokens <= token_budget and (best is None or tokens > int(best[1].get("tokens") or 0)):
+            best = last
+        if not report:
+            break
+        # Overhead is what the pack costs besides the file sections. Measure it,
+        # then aim just under the budget. Stop when close enough or when nothing is cut.
+        measured = tokens - int(report.get("estimated_payload_tokens") or 0)
+        aim = token_budget - int(token_budget * 0.01)
+        new_payload = aim - measured
+        if tokens <= token_budget and (tokens >= token_budget * 0.93 or not report.get("dropped")):
+            break
+        if new_payload < 100 or abs(new_payload - payload_budget) < max(50, payload_budget * 0.02):
+            break
+        if attempt < BUDGET_MAX_ATTEMPTS:
+            why = "over" if tokens > token_budget else "under"
+            log_cb(f"Pack is ~{tokens} tokens, {why} budget {token_budget}. Refitting (attempt {attempt + 1}).", "info")
+        overhead = max(0, token_budget - new_payload)
+    text, run_stats = best or last  # type: ignore[misc]
+    run_stats["token_budget"] = token_budget
+    if stats is not None:
+        stats.update(run_stats)
+    return text
 
 
 def export_pack(

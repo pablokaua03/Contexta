@@ -86,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  contexta . --pack bugfix --focus \"login timeout\"\n"
             "  contexta . --pack pr_review --base main --stdout\n"
             "  contexta . --pack refactor --format json -o pack.json\n"
+            "  contexta . --budget 20000 --focus \"session cookie signing\"\n"
             "  contexta --init\n"
             "  contexta serve\n"
         ),
@@ -103,7 +104,11 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--compression", choices=sorted(COMPRESSION_OPTIONS), default=None, help="How much source to keep: full, balanced, focused, signatures, lean")
     pack.add_argument("--focus", default=None, help="Bias file selection around a topic, for example \"auth flow\"")
     pack.add_argument("-p", "--prompt", default="", help="Custom instruction included in the pack")
-    pack.add_argument("--max-tokens", type=int, default=None, help="Tighten compression until the estimate is at or under this many tokens")
+    pack.add_argument(
+        "--budget", "--max-tokens", dest="max_tokens", type=int, default=None, metavar="N",
+        help="Token budget. Files are ranked and kept at full, signature or lean detail until N tokens are used. "
+             "The pack says what was left out. Combine with --focus to spend it where you care",
+    )
 
     pack.add_argument("--max-files", type=int, default=None, help="Stop scanning after this many files. Default: 2000, or CONTEXTA_MAX_FILES")
 
@@ -217,7 +222,7 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
     if args.redact and args.no_redact:
         raise ConfigError("Use either --redact or --no-redact, not both.")
     if args.max_tokens is not None and args.max_tokens <= 0:
-        raise ConfigError("--max-tokens must be a positive integer.")
+        raise ConfigError("--budget must be a positive integer.")
     if args.max_files is not None and args.max_files <= 0:
         raise ConfigError("--max-files must be a positive integer.")
     if args.base is not None and not str(args.base).strip():
@@ -378,15 +383,22 @@ def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
             redact_secrets=plan.redact_secrets,
             base_ref=plan.base_ref,
             max_files=plan.max_files,
+            token_budget=plan.max_tokens,
             locked_fields=tuple(locked),
             log_cb=lambda msg, tag="": status(msg, tag or "info"),
         )
         tokens = int(stats.get("tokens") or 0)
+        budget_report = stats.get("budget_report") or {}
+        if budget_report and not (plan.max_tokens and tokens > plan.max_tokens and next_compression(compression)):
+            status(
+                f"Budget {plan.max_tokens}: kept {budget_report.get('kept')} of {budget_report.get('candidates')} "
+                f"file(s), left out {budget_report.get('dropped')}. Pack is ~{tokens / 1000:.1f}k tokens."
+            )
         resolved = str(stats.get("compression") or compression)
         nxt = next_compression(resolved)
         if plan.max_tokens and tokens > plan.max_tokens and nxt:
             status(
-                f"Pack is ~{tokens / 1000:.1f}k tokens, above max_tokens {plan.max_tokens}. "
+                f"Pack is ~{tokens / 1000:.1f}k tokens, still above budget {plan.max_tokens} after dropping files. "
                 f"Retrying with --compression {nxt}."
             )
             compression = nxt
@@ -396,13 +408,13 @@ def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
         if plan.max_tokens and tokens > plan.max_tokens:
             status(
                 f"Pack is still ~{tokens / 1000:.1f}k tokens at compression {resolved}, "
-                f"above max_tokens {plan.max_tokens}."
+                f"above budget {plan.max_tokens}. The fixed sections alone may not fit; raise --budget."
             )
         elif not plan.max_tokens and any(row.get("status") == "over" for row in stats.get("budgets") or []):
             if nxt:
                 status(
                     f"Tighten the pack with --compression {nxt}, "
-                    "or set max_tokens in contexta.toml to fit automatically."
+                    "or pass --budget N to fit automatically."
                 )
             else:
                 status("The lean pack is still over this profile. Narrow it with --focus or a smaller directory.")

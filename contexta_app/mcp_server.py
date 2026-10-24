@@ -52,6 +52,7 @@ def generate_context(
     include_hidden: bool = False,
     base: str = "",
     redact: bool = True,
+    budget: int = 0,
 ) -> str:
     """Generate an AI-optimized context pack for a project directory.
 
@@ -73,10 +74,13 @@ def generate_context(
         include_hidden: Include hidden/dot files.
         base: Git ref to compare against, such as main or origin/main.
         redact: Replace likely secrets before returning the pack. On by default.
+        budget: Token budget. Files are ranked and cut until the pack fits. 0 means no limit.
     """
     path = Path(project_path).resolve()
     if not path.is_dir():
         return f"Error: '{project_path}' is not a valid directory."
+    if budget < 0:
+        return "Error: budget must be zero or a positive number of tokens."
 
     try:
         return generate_markdown(
@@ -91,6 +95,7 @@ def generate_context(
             focus_query=focus,
             redact_secrets=redact,
             base_ref=base or None,
+            token_budget=budget or None,
         )
     except GitError as exc:
         return f"Error: {exc}"

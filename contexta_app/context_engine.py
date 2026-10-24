@@ -577,6 +577,7 @@ class ExportConfig:
     pack_profile: str = "custom"
     focus_query: str = ""
     locked_fields: tuple[str, ...] = ()
+    token_budget: int | None = None
 
 
 @dataclass
@@ -603,7 +604,9 @@ class FileInsight:
     dependents: int = 0
     matched_focus: bool = False
     focus_score: float = 0.0
+    focus_raw: float = 0.0
     selection_reasons: list[str] = field(default_factory=list)
+    render_compression: str | None = None
 
     @property
     def name(self) -> str:
@@ -687,6 +690,8 @@ class ProjectAnalysis:
     likely_purpose: str
     summary_lines: list[str]
     diff_fallback_notice: str = ""
+    dropped_files: list[FileInsight] = field(default_factory=list)
+    budget_report: dict = field(default_factory=dict)
 
 
 def resolve_config(config: ExportConfig) -> ExportConfig:
@@ -715,7 +720,14 @@ def build_analysis(
     changed_files: list[Path] | None,
     config: ExportConfig,
     log_cb=None,
+    fit_selection=None,
 ) -> ProjectAnalysis:
+    """Analyze a scanned project.
+
+    ``fit_selection(selected_files)`` may be passed to cut the selection down
+    to a token budget. It returns ``(kept, dropped, report)`` with ``kept`` in
+    rank order.
+    """
     if log_cb is None:
         log_cb = lambda msg, tag="": None
 
@@ -729,7 +741,8 @@ def build_analysis(
     for insight in insights:
         insight.local_imports = sorted(rel_index[insight.relpath.as_posix()])
         insight.dependents = len(reverse_index[insight.relpath.as_posix()])
-        insight.focus_score = compute_focus_score(insight, config.focus_query or config.system_prompt)
+        insight.focus_raw = compute_focus_raw(insight, config.focus_query or config.system_prompt)
+        insight.focus_score = round(min(insight.focus_raw, 6.0), 2)
         insight.matched_focus = insight.focus_score > 0
         insight.tags.update(classify_file(insight))
 
@@ -755,6 +768,10 @@ def build_analysis(
             diff_fallback_notice = "No changed files matched the current filters, so Contexta fell back to central files and nearby tests."
         else:
             diff_fallback_notice = "No valid changed files were detected, so Contexta fell back to central files and nearby tests."
+    dropped_files: list[FileInsight] = []
+    budget_report: dict = {}
+    if fit_selection is not None and selected_files:
+        selected_files, dropped_files, budget_report = fit_selection(selected_files)
     selected_paths = [item.path for item in selected_files]
     technologies = detect_supporting_technologies(insights, fingerprint)
     quality_signals = detect_quality_signals(insights)
@@ -807,6 +824,8 @@ def build_analysis(
         likely_purpose=likely_purpose,
         summary_lines=summary_lines,
         diff_fallback_notice=diff_fallback_notice,
+        dropped_files=dropped_files,
+        budget_report=budget_report,
     )
 
 
@@ -1147,7 +1166,18 @@ def matches_focus(item: FileInsight, query: str) -> bool:
     return compute_focus_score(item, query) > 0
 
 
-def compute_focus_score(item: FileInsight, query: str) -> float:
+def _keyword_forms(keyword: str) -> tuple[str, ...]:
+    """The keyword plus a crude stem, so 'signing' also finds 'signer' and 'signature'."""
+    forms = [keyword]
+    for suffix in ("ing", "ers", "er", "ed", "es", "s"):
+        if keyword.endswith(suffix) and len(keyword) - len(suffix) >= 4:
+            forms.append(keyword[: -len(suffix)])
+            break
+    return tuple(forms)
+
+
+def compute_focus_raw(item: FileInsight, query: str) -> float:
+    """Uncapped focus relevance. ``compute_focus_score`` caps it at 6 for scoring."""
     keywords = extract_keywords(query)
     if not keywords:
         return 0.0
@@ -1158,21 +1188,32 @@ def compute_focus_score(item: FileInsight, query: str) -> float:
     imports_blob = " ".join(imported.lower() for imported in item.imports)
     functions_blob = " ".join(func.lower() for func in item.functions)
     classes_blob = " ".join(cls.lower() for cls in item.classes)
-    content_lower = item.content.lower()
+    content_lower = item.content_lower
+    words = item.content_words
 
     for keyword in keywords:
-        if keyword == stem or keyword in rel:
-            score += 2.0
-        if keyword in functions_blob or keyword in classes_blob:
-            score += 1.8
-        if keyword in imports_blob:
-            score += 1.4
-        if re.search(rf"\b{re.escape(keyword)}\b", content_lower):
-            score += 0.8
-        elif keyword in content_lower:
-            score += 0.4
+        best = 0.0
+        for form in _keyword_forms(keyword):
+            weight = 1.0 if form == keyword else 0.8
+            part = 0.0
+            if form == stem or form in rel:
+                part += 2.0
+            if form in functions_blob or form in classes_blob:
+                part += 1.8
+            if form in imports_blob:
+                part += 1.4
+            if (form in words) if form.isidentifier() else bool(re.search(rf"\b{re.escape(form)}\b", content_lower)):
+                part += 0.8
+            elif form in content_lower:
+                part += 0.4
+            best = max(best, part * weight)
+        score += best
 
-    return round(min(score, 6.0), 2)
+    return round(score, 2)
+
+
+def compute_focus_score(item: FileInsight, query: str) -> float:
+    return round(min(compute_focus_raw(item, query), 6.0), 2)
 
 
 def extract_keywords(text: str) -> list[str]:
@@ -4818,7 +4859,10 @@ def infer_selection_reasons(
     elif config.context_mode == "debug" and not reasons:
         reasons.append("debug context support")
     elif config.context_mode == "full" and not reasons:
-        reasons.append("full context keeps the complete project payload")
+        if config.focus_query.strip():
+            reasons.append("supports the focused area")
+        else:
+            reasons.append("full context keeps the complete project payload")
 
     if not reasons and "test" in item.tags and ctx.has_selected_tests:
         reasons.append("selected test coverage")
@@ -4883,6 +4927,10 @@ def select_files(
     if config.context_mode == "refactor":
         return select_refactor_files(config, lookup, important, tests, reverse_index)
     if config.context_mode == "full":
+        if config.focus_query.strip():
+            focused = select_focus_files(insights, config, lookup, tests, reverse_index)
+            if focused:
+                return focused
         return important
 
     selected: set[str] = {item.relpath.as_posix() for item in important[:12]}
@@ -4890,6 +4938,54 @@ def select_files(
     ordered = [lookup[rel] for rel in selected if rel in lookup]
     ordered.sort(key=lambda item: (-item.score, item.relpath.as_posix()))
     return ordered[:20]
+
+
+FOCUS_MIN_TOP_SCORE = 2.0
+FOCUS_MAX_FILES = 16
+
+
+def select_focus_files(
+    insights: list[FileInsight],
+    config: ExportConfig,
+    lookup: dict[str, FileInsight],
+    tests: list[FileInsight],
+    reverse_index: dict[str, set[str]],
+) -> list[FileInsight]:
+    """A small pack around ``--focus``: matches first, then what they import, then their tests.
+
+    Returns an empty list when nothing matches strongly, and the caller keeps
+    the normal full selection.
+    """
+    ranked = sorted(
+        (item for item in insights if item.focus_raw > 0),
+        key=lambda item: (-item.focus_raw, -item.score, item.relpath.as_posix()),
+    )
+    if not ranked or ranked[0].focus_raw < FOCUS_MIN_TOP_SCORE:
+        return []
+    top = ranked[0].focus_raw
+    cutoff = max(FOCUS_MIN_TOP_SCORE, top * 0.4)
+    primary = [item for item in ranked if item.focus_raw >= cutoff and "test" not in item.tags and "docs" not in item.tags]
+    focus_tests = [item for item in ranked if item.focus_raw >= cutoff and "test" in item.tags]
+    if not primary and not focus_tests:
+        primary = [item for item in ranked if item.focus_raw >= cutoff]
+    selected: set[str] = {item.relpath.as_posix() for item in primary[:8]}
+    selected.update(item.relpath.as_posix() for item in focus_tests[:3])
+    for item in primary[:3]:
+        for target in item.local_imports[:3]:
+            if target in lookup and "docs" not in lookup[target].tags and "test" not in lookup[target].tags:
+                selected.add(target)
+    selected = add_related_tests(selected, lookup, tests, limit=3, min_score=4, allow_token_fallback=False)
+    ordered = [lookup[rel] for rel in selected if rel in lookup]
+    ordered.sort(
+        key=lambda item: (
+            "test" in item.tags,
+            "docs" in item.tags,
+            -item.focus_raw,
+            -item.score,
+            item.relpath.as_posix(),
+        )
+    )
+    return ordered[:FOCUS_MAX_FILES]
 
 
 def add_related_tests(
