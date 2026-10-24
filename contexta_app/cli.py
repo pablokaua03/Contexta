@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from contexta_app.budgets import format_budget_report, next_compression
+from contexta_app.cli_style import format_ai_header, format_banner, format_log_line, format_saved, paint
 from contexta_app.config import (
     ConfigError,
     load_project_config,
@@ -298,13 +299,23 @@ def _check_git_base(project: Path, base_ref: str | None) -> None:
 
 
 def _status_writer(to_stdout: bool):
+    """Progress and status lines. Always styled for the stream they go to.
+
+    When the pack itself goes to stdout, status goes to stderr so stdout stays
+    only the pack. Color is applied only when that stream is a TTY.
+    """
     stream = sys.stderr if to_stdout else sys.stdout
 
-    def status(text: str) -> None:
+    def status(text: str, tag: str = "") -> None:
+        text = format_log_line(text, tag, stream) if tag else text
         data = text if text.endswith("\n") else text + "\n"
         buffer = getattr(stream, "buffer", None)
         encoding = getattr(stream, "encoding", None) or "utf-8"
         if buffer is not None:
+            try:
+                stream.flush()
+            except Exception:
+                pass
             buffer.write(data.encode(encoding, errors="replace"))
             buffer.flush()
         else:
@@ -333,7 +344,7 @@ def _write_pack(text: str, plan: RunPlan, status) -> None:
         output_path = get_desktop() / f"contexta - {safe_project_name(plan.project.name)}{suffix}"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(text, encoding="utf-8")
-    status(f"\nSaved: {output_path}")
+    status(format_saved(str(output_path), sys.stdout))
 
 
 def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
@@ -361,7 +372,7 @@ def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
             redact_secrets=plan.redact_secrets,
             base_ref=plan.base_ref,
             locked_fields=tuple(locked),
-            log_cb=lambda msg, tag="": status(msg),
+            log_cb=lambda msg, tag="": status(msg, tag or "info"),
         )
         tokens = int(stats.get("tokens") or 0)
         resolved = str(stats.get("compression") or compression)
@@ -438,9 +449,7 @@ def _send_ask(plan: RunPlan, markdown: str, status) -> None:
         response = send_to_ai(markdown, plan.ask, provider, api_key, model)
     except Exception as exc:
         raise ValueError(f"Error from {label}: {exc}") from exc
-    status(f"\n{'=' * 60}")
-    status(f"AI Response ({label}):")
-    status("=" * 60)
+    status(format_ai_header(label))
     status(response)
 
 
@@ -490,8 +499,12 @@ def run_cli() -> None:
         _fail(str(exc))
 
     status = _status_writer(plan.to_stdout)
+    banner_stream = sys.stderr if plan.to_stdout else sys.stdout
+    banner = format_banner(__version__, project.name, plan.pack_profile, banner_stream)
+    if banner:
+        banner_stream.write(banner + "\n")
     for warning in plan.warnings:
-        status(f"Warning: {warning}")
+        status(f"Warning: {warning}", "warn")
 
     try:
         text, stats = _render_with_budget(plan, status)
@@ -511,3 +524,7 @@ def run_cli() -> None:
             _send_ask(plan, str(stats.get("markdown") or text), status)
         except ValueError as exc:
             _fail(str(exc))
+
+
+if __name__ == "__main__":
+    run_cli()
