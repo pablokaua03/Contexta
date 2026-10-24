@@ -1,48 +1,64 @@
 <div align="center">
 
+<img src="assets/logo.svg" width="88" alt="Contexta">
+
 # Contexta
 
-**Engine de contexto AI-native para codebases. Serve contexto inteligente para Claude Code, Cursor, Windsurf e qualquer ferramenta compatível com MCP — ou gera packs de contexto curados para uso manual.**
+**O contexto certo, dentro do seu orçamento de tokens, seguro por padrão.**
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Plataforma](https://img.shields.io/badge/Plataforma-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
-[![Versão](https://img.shields.io/badge/Vers%C3%A3o-2.1.0-purple)]()
-[![MCP](https://img.shields.io/badge/MCP-Compatível-orange)]()
+O Contexta lê o código, fica com os arquivos que importam para a tarefa, encaixa tudo no orçamento de tokens que você definir e remove prováveis segredos antes de qualquer coisa sair da sua máquina. Cole o pack em qualquer assistente, ou sirva por MCP para Claude Code, Cursor e Windsurf.
+
+[![Python](https://img.shields.io/badge/python-3.11%2B-12211c?style=flat-square)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-12211c?style=flat-square)](LICENSE)
+[![Plataforma](https://img.shields.io/badge/plataforma-Windows%20%7C%20macOS%20%7C%20Linux-12211c?style=flat-square)]()
+[![Versão](https://img.shields.io/badge/vers%C3%A3o-2.1.0-12211c?style=flat-square)]()
+[![MCP](https://img.shields.io/badge/MCP-compat%C3%ADvel-12211c?style=flat-square)]()
 
 <br>
 
-[<img src="https://img.shields.io/badge/pip%20install%20contexta--ai-3776AB?style=for-the-badge&logo=pypi&logoColor=white" height="42">](https://pypi.org/project/contexta-ai/)
-&nbsp;&nbsp;
-[<img src="https://img.shields.io/badge/Download%20para%20Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
-&nbsp;&nbsp;
-[<img src="https://img.shields.io/badge/Download%20para%20Linux-E95420?style=for-the-badge&logo=linux&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
-
-> Instale via pip, baixe o executável portátil ou rode direto do código-fonte.
+[Instalar com pip](https://pypi.org/project/contexta-ai/)
+·
+[Build para Windows](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
+·
+[Build para Linux](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
 
 <br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/white.png">
-  <img alt="Preview da interface do Contexta" src="assets/dark.png">
+  <img alt="App desktop do Contexta no tema escuro, com um projeto de exemplo e uma prévia legível do pack" src="assets/dark.png" width="960">
 </picture>
 
 </div>
 
 ---
 
-## O que é o Contexta
+## O que o Contexta faz
 
-O Contexta analisa codebases e serve contexto inteligente e curado para ferramentas de IA. Em vez de despejar arquivos cegamente, ele entende a estrutura do projeto, detecta frameworks, ranqueia arquivos por importância e entrega exatamente o que a IA precisa.
+Jogar o repositório inteiro no chat gasta tokens e vaza coisa. O Contexta faz três trabalhos:
+
+| Trabalho | Como |
+|---|---|
+| **Escolher os arquivos certos** | Ranqueia por papel, imports, testes e pela sua tarefa, e descarta o resto |
+| **Respeitar o orçamento** | `--budget 20000` mantém os melhores arquivos que cabem e lista o que ficou de fora |
+| **Ser seguro** | Redação ligada por padrão, arquivos de credencial nunca são lidos e o servidor MCP só lê dentro da pasta permitida |
+
+Números reais no [Flask](https://github.com/pallets/flask), na mesma máquina:
+
+| Comando | Resultado |
+|---|---|
+| `contexta flask` | 0,7 s (antes 2,9 s). FastAPI, 2000 arquivos: 5 s (antes 69 s) |
+| `contexta flask --focus "session cookie signing"` | 8 arquivos, cerca de 17k tokens, `sessions.py` primeiro (antes o repo todo, cerca de 165k) |
+| `contexta flask --budget 8000` | cerca de 7,9k tokens, 15 arquivos, o resto listado como deixado de fora |
 
 **Três formas de usar:**
 
 | Modo | Comando | O que faz |
 |---|---|---|
-| **MCP Server** | `contexta serve` | Roda como servidor de ferramentas — Claude Code, Cursor, Windsurf chamam automaticamente |
-| **CLI** | `contexta ./projeto --pack onboarding` | Gera um arquivo Markdown com o context pack |
-| **GUI** | `contexta` | App desktop com controles visuais |
+| **MCP Server** | `contexta serve --root ~/code` | Servidor de ferramentas para Claude Code, Cursor e Windsurf. Lê só dentro de `--root` |
+| **CLI** | `contexta ./projeto --pack onboarding --budget 20000` | Gera um context pack |
+| **GUI** | `contexta` | App desktop com prévia ao vivo |
 
 ---
 
@@ -59,7 +75,7 @@ Adicione à configuração MCP do seu editor (Claude Code, Cursor, Windsurf, etc
   "mcpServers": {
     "contexta": {
       "command": "contexta",
-      "args": ["serve"]
+      "args": ["serve", "--root", "/caminho/do/seu/codigo"]
     }
   }
 }
@@ -77,6 +93,8 @@ Ou rodando do código-fonte:
   }
 }
 ```
+
+O servidor lê só dentro das pastas passadas com `--root` (repita a flag para mais de uma), ou `CONTEXTA_ROOT`, ou a pasta onde foi iniciado. Caminhos fora delas, escapes com `..`, symlinks que saem do projeto e arquivos de credencial como `.env` ou `id_rsa` são recusados. `generate_context` aceita o argumento `budget`.
 
 ### Ferramentas disponíveis
 
@@ -144,6 +162,9 @@ contexta . --pack bugfix --focus "login timeout"            # corrigir um bug co
 contexta . --pack pr_review --base main --stdout            # revisar o branch contra main
 contexta . --pack refactor --format json -o pack.json       # pack de refactor em JSON
 contexta . --pack raw_files                                 # dump limpo de caminho + conteúdo
+contexta . --budget 20000                                   # melhores arquivos que cabem em 20k tokens
+contexta . --focus "session cookie signing" --budget 8000  # pack pequeno sobre um tópico
+contexta . --dry-run                                        # lista o que seria redatado, não escreve nada
 
 # Configuração inicial do projeto
 contexta --init                                              # cria contexta.toml e .contextaignore
@@ -165,13 +186,15 @@ contexta --configure-ai
 | `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
 | `--ai` | Perfil usado no orçamento de tokens: `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
 | `--task` | Tarefa: `general`, `ai_handoff`, `bug_report`, `code_review`, `explain_project`, `risk_analysis`, `refactor_request`, `pr_summary`, `write_tests`, `find_dead_code` |
-| `--focus` | Direciona scoring para um tópico (ex: `"auth flow"`, `"database"`) |
+| `--focus` | Filtra e ranqueia por um tópico (ex: `"auth flow"`). Mantém os melhores resultados, com testes e imports, não o repo todo |
 | `--diff` / `--staged` | Usa mudanças do git como contexto |
 | `--base` | Compara com uma ref git, como `main` ou `origin/main` |
-| `--max-tokens` | Aperta a compressão até a estimativa caber nesse orçamento |
+| `--budget N` (alias `--max-tokens`) | Mantém os arquivos de maior score até o pack caber em N tokens, aperta a compressão se precisar e lista o que ficou de fora |
+| `--max-files N` | Limite de arquivos do scan (padrão 2000, também `max_files` no `contexta.toml` ou `CONTEXTA_MAX_FILES`) |
 | `--format` | `md` (padrão) ou `json` |
 | `--stdout` | Escreve o pack na stdout. Também acontece quando a stdout está em pipe |
-| `--redact` / `--no-redact` | Redação de segredos ligada por padrão |
+| `--redact` / `--no-redact` | Redação de segredos ligada por padrão. As duas flags não podem ser combinadas |
+| `--dry-run` | Mostra arquivo, linha e regra de cada valor que seria redatado (nunca o valor) e não escreve o pack. Funciona com `--format json` |
 | `--init` | Cria `contexta.toml` e `.contextaignore` se ainda não existirem |
 | `--ask` | Envia context pack + prompt para uma API de IA |
 | `--provider` | Provedor: `claude`, `gemini`, `openai` |
@@ -182,7 +205,7 @@ contexta --configure-ai
 
 Flags do CLI vencem o `contexta.toml`, que vence `~/.contexta/config.toml`. Uma flag explícita também vence o preset, então `--pack pr_review --compression lean` continua lean.
 
-O rodapé do pack diz se o export cabe no perfil escolhido. Segredos comuns (chaves de API, tokens, chaves privadas e senhas em connection strings) viram `[REDACTED]` antes da escrita. `contexta --init` cria a config e o `.contextaignore`. O `.gitignore` continua valendo; o `.contextaignore` e a lista `ignore` excluem arquivos só do pack. Exemplo em [`docs/contexta.toml.example`](docs/contexta.toml.example).
+O rodapé do pack diz se o export cabe no perfil escolhido. Segredos prováveis (chaves de API, tokens, chaves privadas, senhas em URLs, linhas `password: ...` em JSON e YAML e strings aleatórias sob nomes de segredo) viram `[REDACTED]` antes da escrita. Use `--dry-run` para ver o que mudaria. Para manter um valor, liste em `redact_allow` no `contexta.toml` ou ponha `contexta:allow` na linha. Arquivos como `.env`, chaves privadas, `.npmrc` e `.netrc` nunca são lidos. Com `--budget`, o pack ganha uma seção "Token Budget" dizendo o que ficou de fora. `contexta --init` cria a config e o `.contextaignore`. O `.gitignore` continua valendo; o `.contextaignore` e a lista `ignore` excluem arquivos só do pack. Exemplo em [`docs/contexta.toml.example`](docs/contexta.toml.example).
 
 ---
 
@@ -230,8 +253,11 @@ Dependendo do pack, modo e tarefa, a saída pode incluir:
 | **Fingerprinting** | Detecta stack, frameworks, domínio e tipo de projeto automaticamente |
 | **Análise syntax-aware** | tree-sitter + fallback heurístico para extração de símbolos |
 | **Multi-linguagem** | Python, JS/TS, Go, Rust, PHP, Java, C#, Kotlin, Swift, C++ e mais |
-| **Orçamento de tokens** | Relatório fits / tight / over por perfil, com `--max-tokens` |
-| **Redação de segredos** | Credenciais comuns são removidas antes do export Markdown ou JSON |
+| **Orçamento de tokens** | `--budget N` escolhe arquivos por score até caber e diz o que descartou |
+| **Focus** | `--focus "tópico"` filtra e ranqueia, em vez de só dar um empurrão no score |
+| **Redação de segredos** | Formatos conhecidos de token mais checagem de alta entropia, com dry run e allowlist |
+| **MCP seguro** | Confinado a `--root`, sem escape por symlink, sem arquivos de credencial |
+| **Rápido** | Um repo de 2000 arquivos escaneia em cerca de 5 s; a checagem de testes era quadrática |
 | **Diff de PR** | `--base main` inclui o que mudou desde o merge-base, mais o trabalho local |
 | **Config do projeto** | `contexta.toml`, `.contextaignore` e `~/.contexta/config.toml` opcional |
 | **Export JSON** | `--format json` embrulha o mesmo pack para outras ferramentas |
@@ -266,9 +292,12 @@ python -m pytest tests/ -k "not test_relation_score"
 
 - Read-only: o Contexta não modifica o projeto analisado
 - Sem telemetria ou necessidade de rede (exceto `--ask` opcional)
-- Limites de scan evitam exports descontrolados
+- Limite de 2000 arquivos por padrão, ajustável com `--max-files`
 - Payloads binários/base64 suprimidos automaticamente
-- Segredos prováveis são redatados nos exports e no `read_files` do MCP, a menos que `--no-redact` seja usado
+- Segredos prováveis são redatados nos exports e no `read_files` do MCP, a menos que `--no-redact` seja usado. `--dry-run` mostra o que seria redatado
+- Arquivos de credencial (`.env`, chaves privadas, credenciais de nuvem e gerenciadores de pacote) são ignorados no scan e recusados pelo MCP
+- O servidor MCP lê só dentro de `--root` / `CONTEXTA_ROOT` / seu diretório de trabalho
+- Symlinks que apontam para fora do projeto não são seguidos
 - Chaves de API ficam em `~/.contexta/ai_config.json` quando usando `--configure-ai`
 
 ---

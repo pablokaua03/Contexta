@@ -8,16 +8,49 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [2.1.0] - 2026-10-24
 
+This is a security and quality release. If you run the 2.0.0 MCP server, upgrade.
+
+### Security
+- **MCP root confinement** — the MCP server in 2.0.0 accepted any absolute path and could read any file the user could. Tools now read only inside `--root` (repeatable), `CONTEXTA_ROOT`, or the folder the server started in. Paths outside, `..` escapes, and symlinks that leave the project are refused. **Behavior change:** `contexta serve` without `--root` is limited to its working directory
+- **Credential files are never read** — `.env*`, private keys, `.npmrc`, `.netrc`, cloud and package-manager credential files are skipped by the scan and refused by `read_files`. `.env.example` style templates still work
+- **Redaction is complete** — 2.0.0 had no redaction in MCP `read_files` or in packs. Now a span-based engine covers known token formats, `password: ...` lines in JSON and YAML, and random-looking strings (high-entropy check, tuned for no false positives on Flask, Requests and FastAPI)
+- **`--dry-run`** lists file, line and rule of every value that would be redacted, never the value. `--format json` is supported
+- **Allowlist** — `redact_allow` in `contexta.toml`, or a `contexta:allow` / `pragma: allowlist secret` marker on the line
+- `--redact` and `--no-redact` now share one option and cannot be combined
+- The scanner no longer follows symlinks that point outside the project
+
 ### Added
-- **Model token budgets** — every pack reports whether it fits the selected AI profile (GPT-4o, GPT-4.1, Claude Sonnet, Claude Opus, Gemini, Copilot Chat, and a generic long-context fallback). `--max-tokens` tightens compression until the estimate fits
-- **Secret redaction** — API keys, private keys, known tokens, bearer values, and connection-string passwords are replaced with `[REDACTED]` before Markdown, JSON, and MCP `read_files` output. On by default
+- **`--budget N`** (alias `--max-tokens`) — picks files by score until the pack fits N tokens and lists what was left out in a "Token Budget" section. MCP `generate_context` takes `budget`
+- **`--focus` filters and ranks** — `--focus "session cookie signing"` on Flask returns 8 files (about 17k tokens) with `sessions.py` first, instead of the whole repo (about 165k)
+- **`--max-files`** — the 2000-file cap is configurable (also `max_files` in `contexta.toml`, `CONTEXTA_MAX_FILES`)
+- Banner, colors and status lines go to stderr, so `--stdout` carries only the pack
+- **Model token budgets** — every pack reports whether it fits the selected AI profile (GPT-4o, GPT-4.1, Claude Sonnet, Claude Opus, Gemini, Copilot Chat, and a generic long-context fallback)
 - **PR-aware diffs** — `--base main` (or `origin/main`) selects files changed since the merge-base, including uncommitted work
 - **Daily presets** — `bugfix` and `refactor` packs join the existing onboarding and PR review presets
 - **Project config** — `contexta.toml` / `.contexta.toml` for defaults, plus `.contextaignore` and an `ignore` list on top of `.gitignore`. `contexta --init` writes starters. User defaults live in `~/.contexta/config.toml`
 - **CLI handoff** — `--stdout` (and automatic stdout when piped), `--format json`, clipboard fallbacks for Wayland and X11, and errors that say what to run next
 
+### Fixed
+- **Wrong project descriptions** — a scanned project got Contexta's own text (Flask was "feeds, profiles, messaging", `cli.py` described Contexta's CLI). Descriptions now come from the project's own pyproject, package.json, Cargo.toml, composer.json, pubspec.yaml, or README
+- **Performance** — the related-test matching compared every file with every other. FastAPI went from 69 s to 5 s, Flask from 2.9 s to 0.7 s, with identical selection
+- GUI section subtitles were clipped on narrow cards
+- `python -m contexta_app.cli` now runs the CLI
+- Engine tests no longer need Tk; the production helper `test_relation_score` is now `related_test_score` (the old name remains as an alias) so pytest stops collecting it
+
 ### Changed
 - Explicit CLI flags and project config now override pack presets. `--pack pr_review --compression lean` stays lean
+- The README now leads with "the right context, inside your token budget, safe by default"
+
+---
+
+## [2.0.0] - 2026-07-11
+
+### Added
+- **MCP server** — `contexta serve` exposes `scan_project`, `get_architecture`, `generate_context`, `find_files`, `read_files`, `list_packs`, `cache_status`, and `refresh_cache` to Claude Code, Cursor, Windsurf, and other MCP clients
+- **AI API integration** — `--ask` sends the pack and a question to Claude, Gemini, or OpenAI; `--configure-ai` stores keys locally
+- **Smart cache** — in-memory analysis cache with mtime-based invalidation (~2 ms on a hit)
+- **Raw files pack** — `raw_files` preset dumps path and content with no analysis
+- **PyPI package** — `pip install contexta-ai`, with a trusted-publisher release workflow
 
 ---
 

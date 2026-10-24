@@ -39,7 +39,7 @@ from contexta_app.scanner import (
     load_gitignore_patterns,
 )
 
-__version__ = "2.1.0"
+from contexta_app import __version__  # noqa: E402  (single source: contexta_app/__init__.py)
 
 _TOKEN_ENCODER = None
 

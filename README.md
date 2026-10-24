@@ -1,48 +1,64 @@
 <div align="center">
 
+<img src="assets/logo.svg" width="88" alt="Contexta">
+
 # Contexta
 
-**AI-native codebase context engine. Serves intelligent project context to Claude Code, Cursor, Windsurf, and any MCP-compatible tool — or generates curated context packs for manual use.**
+**The right context, inside your token budget, safe by default.**
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
-[![Version](https://img.shields.io/badge/Version-2.1.0-purple)]()
-[![MCP](https://img.shields.io/badge/MCP-Compatible-orange)]()
+Contexta reads a codebase, keeps the files that matter for the task, fits them into the token budget you set, and strips likely secrets before anything leaves your machine. Paste the pack into any assistant, or serve it over MCP to Claude Code, Cursor, and Windsurf.
+
+[![Python](https://img.shields.io/badge/python-3.11%2B-12211c?style=flat-square)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-12211c?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-12211c?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-2.1.0-12211c?style=flat-square)]()
+[![MCP](https://img.shields.io/badge/MCP-compatible-12211c?style=flat-square)]()
 
 <br>
 
-[<img src="https://img.shields.io/badge/pip%20install%20contexta--ai-3776AB?style=for-the-badge&logo=pypi&logoColor=white" height="42">](https://pypi.org/project/contexta-ai/)
-&nbsp;&nbsp;
-[<img src="https://img.shields.io/badge/Download%20for%20Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
-&nbsp;&nbsp;
-[<img src="https://img.shields.io/badge/Download%20for%20Linux-E95420?style=for-the-badge&logo=linux&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
-
-> Install via pip, download the portable executable, or run from source.
+[Install with pip](https://pypi.org/project/contexta-ai/)
+·
+[Windows build](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
+·
+[Linux build](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
 
 <br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/white.png">
-  <img alt="Contexta interface preview" src="assets/dark.png">
+  <img alt="Contexta desktop app in dark theme, with a sample project selected and a readable pack preview" src="assets/dark.png" width="960">
 </picture>
 
 </div>
 
 ---
 
-## What is Contexta
+## What Contexta does
 
-Contexta analyzes codebases and serves intelligent, curated context to AI tools. Instead of dumping files blindly, it understands project structure, detects frameworks, ranks files by importance, and delivers exactly what an AI needs.
+Dumping a whole repo into a chat wastes tokens and leaks things. Contexta does three jobs instead:
+
+| Job | How |
+|---|---|
+| **Pick the right files** | Ranks files by role, imports, tests and your task, then drops the rest |
+| **Respect your budget** | `--budget 20000` keeps the best files that fit and lists what it left out |
+| **Stay safe** | Redaction is on by default, credential files are never read, and the MCP server only reads inside the folder you allow |
+
+Real numbers on [Flask](https://github.com/pallets/flask), measured on the same machine:
+
+| Command | Result |
+|---|---|
+| `contexta flask` | 0.7 s (was 2.9 s). FastAPI, 2000 files: 5 s (was 69 s) |
+| `contexta flask --focus "session cookie signing"` | 8 files, about 17k tokens, `sessions.py` first (was the whole repo, about 165k) |
+| `contexta flask --budget 8000` | about 7.9k tokens, 15 files, the rest listed as left out |
 
 **Three ways to use it:**
 
 | Mode | Command | What it does |
 |---|---|---|
-| **MCP Server** | `contexta serve` | Runs as a tool server — Claude Code, Cursor, Windsurf call it automatically |
-| **CLI** | `contexta ./project --pack onboarding` | Generates a context pack Markdown file |
-| **GUI** | `contexta` | Desktop app with visual controls |
+| **MCP Server** | `contexta serve --root ~/code` | Tool server for Claude Code, Cursor and Windsurf. Reads only inside `--root` |
+| **CLI** | `contexta ./project --pack onboarding --budget 20000` | Writes a context pack |
+| **GUI** | `contexta` | Desktop app with a live preview |
 
 ---
 
@@ -59,7 +75,7 @@ Add to your MCP configuration (Claude Code, Cursor, Windsurf, etc.):
   "mcpServers": {
     "contexta": {
       "command": "contexta",
-      "args": ["serve"]
+      "args": ["serve", "--root", "/path/to/your/code"]
     }
   }
 }
@@ -77,6 +93,8 @@ Or if running from source:
   }
 }
 ```
+
+The server reads only inside the folders you pass with `--root` (repeat the flag for more), or `CONTEXTA_ROOT`, or the folder it was started in. Paths outside, `..` escapes, symlinks that leave the project, and credential files such as `.env` or `id_rsa` are refused. `generate_context` accepts a `budget` argument.
 
 ### Available tools
 
@@ -144,6 +162,9 @@ contexta . --pack bugfix --focus "login timeout"            # fix a bug with a c
 contexta . --pack pr_review --base main --stdout            # review this branch against main
 contexta . --pack refactor --format json -o pack.json       # hand a refactor pack to another tool
 contexta . --pack raw_files                                 # clean path + content dump
+contexta . --budget 20000                                   # best files that fit 20k tokens
+contexta . --focus "session cookie signing" --budget 8000  # a small pack about one topic
+contexta . --dry-run                                        # list what would be redacted, write nothing
 
 # First-time project setup
 contexta --init                                              # writes contexta.toml and .contextaignore
@@ -165,13 +186,15 @@ contexta --configure-ai
 | `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
 | `--ai` | Target AI profile used for budget guidance: `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
 | `--task` | Task profile: `general`, `ai_handoff`, `bug_report`, `code_review`, `explain_project`, `risk_analysis`, `refactor_request`, `pr_summary`, `write_tests`, `find_dead_code` |
-| `--focus` | Bias scoring around a topic (e.g. `"auth flow"`, `"database"`) |
+| `--focus` | Filter and rank by a topic (e.g. `"auth flow"`). Keeps the best matches and their tests and imports, not the whole repo |
 | `--diff` / `--staged` | Use git changes as context |
 | `--base` | Compare against a git ref such as `main` or `origin/main` (merge-base diff plus uncommitted work) |
-| `--max-tokens` | Tighten compression until the estimate fits this budget |
+| `--budget N` (alias `--max-tokens`) | Keep the highest-scoring files until the pack fits N tokens, tighten compression if needed, and list what was left out |
+| `--max-files N` | File cap for the scan (default 2000, also `max_files` in `contexta.toml` or `CONTEXTA_MAX_FILES`) |
 | `--format` | `md` (default) or `json` |
 | `--stdout` | Write the pack to stdout. Also happens automatically when stdout is piped |
-| `--redact` / `--no-redact` | Secret redaction is on by default |
+| `--redact` / `--no-redact` | Secret redaction is on by default. The two flags cannot be combined |
+| `--dry-run` | Print file, line and rule of every value that would be redacted (never the value) and write no pack. Works with `--format json` |
 | `--init` | Write `contexta.toml` and `.contextaignore` if they are missing |
 | `--ask` | Send context pack + prompt to an AI API |
 | `--provider` | AI provider: `claude`, `gemini`, `openai` |
@@ -193,9 +216,9 @@ CLI flags override `contexta.toml`, which overrides `~/.contexta/config.toml`. A
 
 The pack footer reports whether the export fits the selected profile. Planning windows include GPT-4o (128k), GPT-4.1 (about 1M), Claude Sonnet and Opus (200k), Gemini Flash and Pro (about 1M), and Copilot Chat / coding agent (64k / 128k). Contexta reserves 20% of each window for the question and the reply. These are planning numbers, not a provider quota.
 
-Set `max_tokens` in `contexta.toml`, or pass `--max-tokens`, and Contexta retries with tighter compression until the estimate fits or it reaches `lean`.
+Set `max_tokens` in `contexta.toml`, or pass `--budget`, and Contexta ranks the files, keeps the best ones that fit, and tightens compression only if it must. The pack gets a "Token Budget" section naming what was left out.
 
-Before the pack is written, likely secrets are replaced with `[REDACTED]`: API keys, private keys, known token prefixes, bearer tokens, and passwords in connection strings. Placeholders such as `your-api-key` are kept. This is best-effort and does not replace keeping secrets out of the tree. `--no-redact` disables it.
+Before the pack is written, likely secrets are replaced with `[REDACTED]`: API keys, private keys, known token prefixes, bearer tokens, passwords in URLs, `password: ...` lines in JSON and YAML, and random-looking strings under secret-like names. Placeholders such as `your-api-key` are kept. Run `--dry-run` to see what would change. To keep a value, list it in `redact_allow` in `contexta.toml`, or put `contexta:allow` on its line. Files such as `.env`, private keys, `.npmrc` and `.netrc` are never read at all. This is best-effort and does not replace keeping secrets out of the tree. `--no-redact` disables redaction.
 
 `contexta --init` writes a starter `contexta.toml` and `.contextaignore`. `.gitignore` is always applied. `.contextaignore` and the config `ignore` list add pack-only exclusions, using gitignore syntax, without changing what git tracks. A sample project file lives at [`docs/contexta.toml.example`](docs/contexta.toml.example).
 
@@ -245,8 +268,11 @@ Depending on pack, mode, and task, the output can include:
 | **Project fingerprinting** | Detects stack, frameworks, domain, and project type automatically |
 | **Syntax-aware analysis** | tree-sitter + heuristic fallback for symbol extraction |
 | **Multi-language** | Python, JS/TS, Go, Rust, PHP, Java, C#, Kotlin, Swift, C++ and more |
-| **Token budgets** | Per-profile fit report (fits / tight / over) plus `--max-tokens` auto-tightening |
-| **Secret redaction** | Common credentials are stripped before Markdown or JSON export |
+| **Token budgets** | `--budget N` picks files by score until the pack fits, and reports what it dropped |
+| **Focus** | `--focus "topic"` filters and ranks instead of only nudging scores |
+| **Secret redaction** | Known token formats plus a high-entropy check, with a dry run and an allowlist |
+| **Safe MCP** | Confined to `--root`, no symlink escapes, no credential files |
+| **Fast** | A 2000-file repo scans in about 5 s; the old test-matching pass was quadratic |
 | **PR base diff** | `--base main` packs the branch since the merge-base, plus uncommitted work |
 | **Project config** | `contexta.toml`, `.contextaignore`, and optional `~/.contexta/config.toml` |
 | **JSON export** | `--format json` wraps the same pack for tools that want structured input |
@@ -281,9 +307,12 @@ python -m pytest tests/ -k "not test_relation_score"
 
 - Read-only: Contexta does not modify the scanned project
 - No runtime telemetry or network requirement (except optional `--ask` AI calls)
-- Scan limits prevent runaway exports
+- Scan limit of 2000 files by default, raised with `--max-files`
 - Embedded binary/blob payloads are suppressed automatically
-- Likely secrets are redacted in exports and in MCP `read_files` unless `--no-redact` is set
+- Likely secrets are redacted in exports and in MCP `read_files` unless `--no-redact` is set. `--dry-run` shows what would be redacted
+- Credential files (`.env`, private keys, cloud and package-manager credentials) are skipped by the scan and refused by MCP
+- The MCP server reads only inside `--root` / `CONTEXTA_ROOT` / its working directory
+- Symlinks that point outside the project are not followed
 - AI API keys are stored locally in `~/.contexta/ai_config.json` when using `--configure-ai`
 
 ---
