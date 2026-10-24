@@ -127,6 +127,10 @@ contexta install copilot     # a managed block in .github/copilot-instructions.m
 contexta install mcp         # .mcp.json (--client cursor|vscode for the other editors)
 ```
 
+<p align="center">
+  <img alt="Terminal output of contexta install cursor and contexta install mcp creating the Cursor rule and .mcp.json, then a second run reporting ok" src="assets/install.png" width="860">
+</p>
+
 Safe to run twice: identical content is left alone, existing files are never overwritten without `--force`, and a file that already has other content only gets the Contexta block appended. `--dry-run` shows what would change.
 
 ### Smart cache
@@ -269,6 +273,18 @@ contexta graph export -o graph.json          # JSON, JSONL or Markdown for other
 ```
 
 Packs use it: with `--budget`, files the project depends on most are kept first, and on repos over 800 files a budgeted or focused run analyses the highest-ranked files instead of all of them. It never stores file contents, credential files or authors, and it is gitignored by default. Details in [docs/graph.md](docs/graph.md).
+
+<p align="center">
+  <img alt="Terminal output of contexta graph update, graph impact for a session file listing impacted files and tests to run, and graph hot listing the most changed files" src="assets/graph.png" width="860">
+</p>
+
+### In the pull request
+
+The GitHub Action posts one comment per PR with the changed files, the tests worth running and what the change reaches, plus a redacted context pack within your token budget as an artifact. The comment is edited in place on later runs and lists paths only, never source. Details in [docs/github-action.md](docs/github-action.md).
+
+<p align="center">
+  <img alt="Pull request comment from the Contexta Action: 3 changed files, 4 tests to run, 3 files reached, about 2.8k tokens of a 24k budget, secrets redacted" src="assets/action.png" width="860">
+</p>
 
 ---
 

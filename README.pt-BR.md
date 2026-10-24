@@ -126,6 +126,10 @@ contexta install copilot     # um bloco gerenciado em .github/copilot-instructio
 contexta install mcp         # .mcp.json (--client cursor|vscode para os outros editores)
 ```
 
+<p align="center">
+  <img alt="Saída do terminal de contexta install cursor e contexta install mcp criando a regra do Cursor e o .mcp.json, e uma segunda execução respondendo ok" src="assets/install.png" width="860">
+</p>
+
 Pode rodar duas vezes: conteúdo idêntico é deixado como está, arquivo existente nunca é sobrescrito sem `--force`, e um arquivo que já tem outro conteúdo só recebe o bloco do Contexta no fim. `--dry-run` mostra o que mudaria.
 
 ### Cache inteligente
@@ -253,6 +257,18 @@ contexta graph export -o graph.json          # JSON, JSONL ou Markdown para outr
 ```
 
 Os packs usam o grafo: com `--budget`, os arquivos dos quais o projeto mais depende são mantidos primeiro, e em repos com mais de 800 arquivos uma execução com budget ou foco analisa os arquivos mais bem ranqueados em vez de todos. Ele nunca guarda conteúdo de arquivos, arquivos de credencial nem autores, e vem no gitignore por padrão. Detalhes em [docs/graph.md](docs/graph.md).
+
+<p align="center">
+  <img alt="Saída do terminal de contexta graph update, graph impact de um arquivo de sessão listando arquivos impactados e testes para rodar, e graph hot com os arquivos que mais mudam" src="assets/graph.png" width="860">
+</p>
+
+### No pull request
+
+A GitHub Action posta um comentário por PR com os arquivos alterados, os testes que valem rodar e o que a mudança alcança, mais um pack de contexto com segredos removidos, dentro do seu budget de tokens, como artefato. O comentário é editado no lugar nas execuções seguintes e lista só caminhos, nunca código. Detalhes em [docs/github-action.md](docs/github-action.md).
+
+<p align="center">
+  <img alt="Comentário da Action do Contexta no pull request: 3 arquivos alterados, 4 testes para rodar, 3 arquivos alcançados, cerca de 2,8k tokens de um budget de 24k, segredos removidos" src="assets/action.png" width="860">
+</p>
 
 ---
 
