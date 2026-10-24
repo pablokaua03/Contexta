@@ -1,0 +1,97 @@
+name: Contexta PR context
+description: >-
+  Build AI-ready context for a pull request: the diff, the files it reaches and the tests worth
+  running, as a redacted pack that fits a token budget. Uploads it as an artifact and can comment on the PR.
+author: Contexta
+branding:
+  icon: file-text
+  color: blue
+
+inputs:
+  base-ref:
+    description: Branch to compare against. Defaults to the pull request's base branch.
+    required: false
+    default: ''
+  budget:
+    description: Token budget for the whole context file.
+    required: false
+    default: '24000'
+  comment:
+    description: Post (and keep updating) a summary comment on the pull request. Needs the pull-requests write permission.
+    required: false
+    default: 'false'
+  artifact-name:
+    description: Name of the uploaded artifact.
+    required: false
+    default: contexta-pr-context
+  output:
+    description: File name for the context pack.
+    required: false
+    default: contexta-pr-context.md
+  path:
+    description: Project folder, relative to the workspace.
+    required: false
+    default: '.'
+  python-version:
+    description: Python version used to run Contexta.
+    required: false
+    default: '3.12'
+  github-token:
+    description: Token used for the PR comment.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  pack-path:
+    description: Path of the generated context pack.
+    value: ${{ steps.report.outputs.pack-path }}
+  tokens:
+    description: Estimated tokens in the pack.
+    value: ${{ steps.report.outputs.tokens }}
+  changed-files:
+    description: Number of files changed in the pull request.
+    value: ${{ steps.report.outputs.changed-files }}
+  tests:
+    description: Number of test files that look relevant to the change.
+    value: ${{ steps.report.outputs.tests }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Contexta
+      shell: bash
+      run: python -m pip install --disable-pip-version-check --quiet "${{ github.action_path }}"
+
+    - name: Build the PR context
+      id: report
+      shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        INPUT_BASE: ${{ inputs.base-ref }}
+        INPUT_BUDGET: ${{ inputs.budget }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        PR_BASE_REF: ${{ github.base_ref }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        base="${INPUT_BASE:-$PR_BASE_REF}"
+        if [ -z "$base" ]; then
+          echo "::error::No base branch. Run this action on pull_request events, or set the base-ref input."
+          exit 2
+        fi
+        case "$base" in origin/*) ;; *) git fetch --no-tags --quiet origin "$base" 2>/dev/null || true; base="origin/$base" ;; esac
+        flags=""
+        if [ "$INPUT_COMMENT" = "true" ]; then flags="--comment"; fi
+        python -m contexta_app.ci_report --base "$base" --budget "$INPUT_BUDGET" --output "$INPUT_OUTPUT" $flags
+
+    - name: Upload the context pack
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.path }}/${{ inputs.output }}
+        if-no-files-found: error
+        retention-days: 14
