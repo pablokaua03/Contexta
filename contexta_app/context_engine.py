@@ -10,6 +10,7 @@ import tomllib
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from pathlib import Path
 
 from rapidfuzz.fuzz import ratio
@@ -608,6 +609,24 @@ class FileInsight:
     def name(self) -> str:
         return self.path.name
 
+    @cached_property
+    def resolved(self) -> Path:
+        """``path.resolve()`` once. It hits the filesystem, so never call it in a loop."""
+        return self.path.resolve()
+
+    @cached_property
+    def content_lower(self) -> str:
+        return self.content.lower()
+
+    @cached_property
+    def content_words(self) -> frozenset[str]:
+        """Every maximal ``\\w+`` token in the lowercased content.
+
+        ``re.search(r"\\bname\\b", text)`` for a word-character ``name`` is the same
+        as ``name in content_words``.
+        """
+        return frozenset(re.findall(r"\w+", self.content_lower))
+
 
 @dataclass
 class ProjectFingerprint:
@@ -756,6 +775,7 @@ def build_analysis(
         quality_signals,
     )
 
+    selection_ctx = build_selection_context(selected_files, changed_set)
     for item in selected_files:
         item.selection_reasons = infer_selection_reasons(
             item,
@@ -764,6 +784,7 @@ def build_analysis(
             changed_set,
             reverse_index,
             diff_fallback=bool(diff_fallback_notice),
+            ctx=selection_ctx,
         )
 
     log_cb(f"Insight layer ready: {len(selected_files)} curated file(s) selected.", "ok")
@@ -996,12 +1017,130 @@ def resolve_local_import(item: FileInsight, imported: str, module_map: dict[str,
     return None
 
 
+def _module_name(item: FileInsight) -> str:
+    return ".".join(item.relpath.with_suffix("").parts).lower()
+
+
+def _symbol_names(item: FileInsight) -> list[str]:
+    return [name.lower() for name in item.functions[:6] + item.classes[:4] if len(name) >= 4]
+
+
+def _dotted_suffixes(name: str) -> list[str]:
+    """``a.b.c`` -> ``b.c``, ``c``: what ``name.endswith(f".{x}")`` can match."""
+    return [name[i + 1:] for i, ch in enumerate(name) if ch == "."]
+
+
+class RelatedTestIndex:
+    """Finds the tests ``related_test_score`` can rate 4 or more, without scoring every pair.
+
+    A pair reaches 4 only through a file-name match (4), an import match (2) or
+    a symbol mention (1-2): name-only parts (parent folder 1, fuzzy name 2) top
+    out at 3. The index returns every test that has a name, import or mention
+    link to the file, and ``related_test_score`` then decides exactly as before.
+    """
+
+    def __init__(self, candidates: list[FileInsight]):
+        self.candidates = [c for c in candidates if "test" in c.relpath.as_posix().lower()]
+        self._by_target_stem: dict[str, list[FileInsight]] = defaultdict(list)
+        self._by_import: dict[str, list[FileInsight]] = defaultdict(list)
+        self._by_import_suffix: dict[str, list[FileInsight]] = defaultdict(list)
+        self._by_word: dict[str, list[FileInsight]] = defaultdict(list)
+        for test in self.candidates:
+            for target in _test_target_stems(test.path.stem.lower()):
+                self._by_target_stem[target].append(test)
+            for imported in {value.lower() for value in test.imports}:
+                self._by_import[imported].append(test)
+                for suffix in _dotted_suffixes(imported):
+                    self._by_import_suffix[suffix].append(test)
+            for word in test.content_words:
+                self._by_word[word].append(test)
+
+    def tests_for(self, item: FileInsight) -> list[FileInsight]:
+        found: dict[int, FileInsight] = {}
+        stem = item.path.stem.lower()
+        module = _module_name(item)
+        for test in self._by_target_stem.get(stem, ()):
+            found[id(test)] = test
+        for test in self._by_import.get(stem, ()):
+            found[id(test)] = test
+        for test in self._by_import_suffix.get(stem, ()):
+            found[id(test)] = test
+        for i in range(len(module) + 1):
+            for test in self._by_import.get(module[i:], ()):
+                found[id(test)] = test
+        for name in _symbol_names(item):
+            if name.isidentifier():
+                for test in self._by_word.get(name, ()):
+                    found[id(test)] = test
+            else:
+                for test in self.candidates:
+                    if re.search(rf"\b{re.escape(name)}\b", test.content_lower):
+                        found[id(test)] = test
+        return list(found.values())
+
+    def related(self, item: FileInsight) -> list[FileInsight]:
+        return [test for test in self.tests_for(item) if related_test_score(item, test) >= 4]
+
+
+class RelatedSourceIndex:
+    """The reverse lookup: which of ``sources`` does a test point at."""
+
+    def __init__(self, sources: list[FileInsight]):
+        self.sources = sources
+        self._by_stem: dict[str, list[FileInsight]] = defaultdict(list)
+        self._by_module_suffix: dict[str, list[FileInsight]] = defaultdict(list)
+        self._by_word: dict[str, list[FileInsight]] = defaultdict(list)
+        self._odd_symbols: list[FileInsight] = []
+        for source in sources:
+            self._by_stem[source.path.stem.lower()].append(source)
+            module = _module_name(source)
+            for i in range(len(module) + 1):
+                self._by_module_suffix[module[i:]].append(source)
+            for name in _symbol_names(source):
+                if name.isidentifier():
+                    self._by_word[name].append(source)
+                else:
+                    self._odd_symbols.append(source)
+
+    def sources_for(self, test: FileInsight) -> list[FileInsight]:
+        found: dict[int, FileInsight] = {}
+
+        def add(group) -> None:
+            for source in group:
+                found[id(source)] = source
+
+        add(self._odd_symbols)
+        for stem in _test_target_stems(test.path.stem.lower()):
+            add(self._by_stem.get(stem, ()))
+        for imported in {value.lower() for value in test.imports}:
+            add(self._by_stem.get(imported, ()))
+            add(self._by_module_suffix.get(imported, ()))
+            for suffix in _dotted_suffixes(imported):
+                add(self._by_stem.get(suffix, ()))
+        for word in test.content_words.intersection(self._by_word):
+            add(self._by_word[word])
+        return list(found.values())
+
+    def has_related(self, test: FileInsight) -> bool:
+        return any(related_test_score(source, test) >= 4 for source in self.sources_for(test))
+
+
+_TEST_INDEX_CACHE: list = []
+
+
+def related_test_index(candidates: list[FileInsight]) -> RelatedTestIndex:
+    """One index per candidate list. The list object is the cache key."""
+    if _TEST_INDEX_CACHE:
+        cached_list, cached_len, index = _TEST_INDEX_CACHE[0]
+        if cached_list is candidates and cached_len == len(candidates):
+            return index
+    index = RelatedTestIndex(candidates)
+    _TEST_INDEX_CACHE[:] = [(candidates, len(candidates), index)]
+    return index
+
+
 def resolve_related_tests(item: FileInsight, insights: list[FileInsight]) -> set[str]:
-    related: set[str] = set()
-    for candidate in insights:
-        if is_related_test_for(item, candidate):
-            related.add(candidate.relpath.as_posix())
-    return related
+    return {test.relpath.as_posix() for test in related_test_index(insights).related(item)}
 
 
 def matches_focus(item: FileInsight, query: str) -> bool:
@@ -1118,26 +1257,16 @@ def related_test_score(item: FileInsight, candidate: FileInsight) -> int:
 
     item_stem = item.path.stem.lower()
     item_module = ".".join(item.relpath.with_suffix("").parts).lower()
-    imports_lower = [imported.lower() for imported in candidate.imports]
-    if any(
-        imported == item_stem
-        or imported == item_module
-        or imported.endswith(f".{item_stem}")
-        or item_module.endswith(imported)
-        for imported in imports_lower
-    ):
-        score += 2
-
-    symbol_names = [name for name in item.functions[:6] + item.classes[:4] if len(name) >= 4]
-    mention_hits = sum(
-        1
-        for name in symbol_names
-        if re.search(rf"\b{re.escape(name.lower())}\b", candidate.content.lower())
-    )
-    if mention_hits >= 2:
-        score += 2
-    elif mention_hits == 1:
-        score += 1
+    for imported in candidate.imports:
+        imported = imported.lower()
+        if (
+            imported == item_stem
+            or imported == item_module
+            or imported.endswith(f".{item_stem}")
+            or item_module.endswith(imported)
+        ):
+            score += 2
+            break
 
     parent_name = item.relpath.parent.name.lower()
     if parent_name and parent_name != "." and parent_name in rel:
@@ -1149,8 +1278,23 @@ def related_test_score(item: FileInsight, candidate: FileInsight) -> int:
     elif fuzzy_name_score >= 80:
         score += 1
 
-    return score
+    symbol_names = [name for name in item.functions[:6] + item.classes[:4] if len(name) >= 4]
+    if symbol_names:
+        words = candidate.content_words
+        mention_hits = 0
+        for name in symbol_names:
+            lowered = name.lower()
+            if lowered.isidentifier():
+                hit = lowered in words
+            else:
+                hit = re.search(rf"\b{re.escape(lowered)}\b", candidate.content_lower) is not None
+            if hit:
+                mention_hits += 1
+                if mention_hits >= 2:
+                    break
+        score += 2 if mention_hits >= 2 else mention_hits
 
+    return score
 
 
 def test_relation_score(item: FileInsight, candidate: FileInsight) -> int:
@@ -2025,7 +2169,7 @@ def score_file(
     if rel in entry_relpaths:
         score += 6.0
         breakdown.append("+6.0 entrypoint")
-    if item.path.resolve() in changed_paths:
+    if item.resolved in changed_paths:
         score += 4.0
         breakdown.append("+4.0 changed file")
     if item.focus_score:
@@ -4034,10 +4178,7 @@ def is_packaging_helper(item: FileInsight) -> bool:
 def has_related_project_test(item: FileInsight, tests: list[FileInsight]) -> bool:
     if "test" in item.tags:
         return False
-    for candidate in tests:
-        if related_test_score(item, candidate) >= 4:
-            return True
-    return False
+    return bool(related_test_index(tests).related(item))
 
 
 def project_stack_tokens(fingerprint: ProjectFingerprint | None) -> set[str]:
@@ -4325,6 +4466,20 @@ def is_public_api_surface(item: FileInsight, fingerprint: ProjectFingerprint | N
     }
 
 
+_TAGGED_TESTS_CACHE: list = []
+
+
+def _tagged_tests(all_files: list[FileInsight]) -> list[FileInsight]:
+    """The test-tagged files of ``all_files``, built once per list object."""
+    if _TAGGED_TESTS_CACHE:
+        cached_list, cached_len, tests = _TAGGED_TESTS_CACHE[0]
+        if cached_list is all_files and cached_len == len(all_files):
+            return tests
+    tests = [candidate for candidate in all_files if "test" in candidate.tags]
+    _TAGGED_TESTS_CACHE[:] = [(all_files, len(all_files), tests)]
+    return tests
+
+
 def compute_risk_score(
     item: FileInsight,
     all_files: list[FileInsight],
@@ -4336,8 +4491,8 @@ def compute_risk_score(
     path = item.relpath.as_posix().lower()
     content = item.content.lower()
     role = (item.summary or infer_file_role(item, fingerprint.project_type if fingerprint else None)).lower()
-    tests = [candidate for candidate in all_files if "test" in candidate.tags]
-    changed = item.path.resolve() in changed_paths
+    tests = _tagged_tests(all_files)
+    changed = item.resolved in changed_paths
     dependents = len(reverse_index.get(item.relpath.as_posix(), set()))
     packaging_helper = is_packaging_helper(item)
 
@@ -4565,6 +4720,42 @@ def build_relationship_map(selected_files: list[FileInsight], reverse_index: dic
     return list(dict.fromkeys(rels))[:10]
 
 
+@dataclass
+class SelectionContext:
+    """Work shared by every ``infer_selection_reasons`` call for one pack.
+
+    Building it once keeps reason inference linear in the number of selected
+    files instead of re-deriving the same sets for every file.
+    """
+
+    changed_relpaths: set[str]
+    has_selected_tests: bool
+    source_index: RelatedSourceIndex
+
+
+def build_selection_context(selected_files: list[FileInsight], changed_paths: set[Path]) -> SelectionContext:
+    changed_relpaths: set[str] = set()
+    has_tests = False
+    sources: list[FileInsight] = []
+    for candidate in selected_files:
+        if candidate.resolved in changed_paths:
+            changed_relpaths.add(candidate.relpath.as_posix())
+        if "test" in candidate.tags:
+            has_tests = True
+        else:
+            sources.append(candidate)
+    return SelectionContext(changed_relpaths, has_tests, RelatedSourceIndex(sources))
+
+
+def _test_target_stems(test_stem: str) -> set[str]:
+    """Source stems a test file name points at: test_x, x_test, test_a_x."""
+    stems = {test_stem[i + 1:] for i, ch in enumerate(test_stem) if ch == "_"}
+    if test_stem.endswith("_test"):
+        stems.add(test_stem[: -len("_test")])
+    stems.discard("")
+    return stems
+
+
 def infer_selection_reasons(
     item: FileInsight,
     selected_files: list[FileInsight],
@@ -4572,23 +4763,21 @@ def infer_selection_reasons(
     changed_paths: set[Path],
     reverse_index: dict[str, set[str]],
     diff_fallback: bool = False,
+    ctx: SelectionContext | None = None,
 ) -> list[str]:
     reasons: list[str] = []
-    changed_relpaths = {
-        selected.relpath.as_posix()
-        for selected in selected_files
-        if selected.path.resolve() in changed_paths
-    }
-    selected_tests = [candidate for candidate in selected_files if "test" in candidate.tags]
+    if ctx is None:
+        ctx = build_selection_context(selected_files, changed_paths)
+    changed_relpaths = ctx.changed_relpaths
 
     if "entrypoint" in item.tags:
         reasons.append("entrypoint")
-    if item.path.resolve() in changed_paths:
+    if item.resolved in changed_paths:
         reasons.append("changed file")
     if item.matched_focus:
         reasons.append("matched focus")
     if "test" in item.tags:
-        if any(related_test_score(other, item) >= 4 for other in selected_files if "test" not in other.tags):
+        if ctx.source_index.has_related(item):
             reasons.append("related test")
     if "docs" in item.tags:
         reasons.append("documentation")
@@ -4631,7 +4820,7 @@ def infer_selection_reasons(
     elif config.context_mode == "full" and not reasons:
         reasons.append("full context keeps the complete project payload")
 
-    if not reasons and "test" in item.tags and selected_tests:
+    if not reasons and "test" in item.tags and ctx.has_selected_tests:
         reasons.append("selected test coverage")
     if not reasons:
         reasons.append("high score")
@@ -4675,7 +4864,7 @@ def select_files(
     tests = [item for item in insights if "test" in item.tags]
     important = sorted(insights, key=lambda item: (-item.score, item.relpath.as_posix()))
     focus_matches = [item for item in important if item.matched_focus]
-    changed = [item for item in important if item.path.resolve() in changed_paths]
+    changed = [item for item in important if item.resolved in changed_paths]
 
     if config.task_profile == "risk_analysis":
         return select_risk_files(config, lookup, important, changed, tests, reverse_index)

@@ -5,6 +5,7 @@ scanner.py - Project scanning, filtering, .gitignore support, git diff.
 from __future__ import annotations
 
 import fnmatch
+import os
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -179,7 +180,25 @@ IGNORE_SUFFIXES: tuple[str, ...] = (
 )
 
 MAX_FILE_LINES = 1_000
-MAX_TOTAL_FILES = 2_000
+DEFAULT_MAX_FILES = 2_000
+MAX_TOTAL_FILES = DEFAULT_MAX_FILES  # kept for callers that import the old name
+
+
+def resolve_max_files(value: int | None = None) -> int:
+    """File cap for a scan: explicit value, then CONTEXTA_MAX_FILES, then the default."""
+    if value is not None:
+        if value <= 0:
+            raise ValueError("max files must be a positive integer")
+        return value
+    raw = os.environ.get("CONTEXTA_MAX_FILES", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            parsed = 0
+        if parsed > 0:
+            return parsed
+    return DEFAULT_MAX_FILES
 
 
 def get_language(filepath: Path) -> str | None:
@@ -480,8 +499,13 @@ def build_tree(
     counter: list[int],
     gitignore_patterns: list[str],
     project_root: Path,
+    max_files: int | None = None,
 ) -> dict:
-    """Recursively build a tree dict of the project."""
+    """Recursively build a tree dict of the project.
+
+    The scan stops after ``max_files`` files (default 2000, or CONTEXTA_MAX_FILES).
+    """
+    limit = resolve_max_files(max_files)
     node: dict = {"name": root.name, "path": root, "dirs": [], "files": []}
 
     try:
@@ -491,8 +515,8 @@ def build_tree(
         return node
 
     for entry in entries:
-        if counter[0] >= MAX_TOTAL_FILES:
-            log_cb(f"Reached {MAX_TOTAL_FILES}-file limit. Scan stopped.", "warn")
+        if counter[0] >= limit:
+            log_cb(f"Reached {limit}-file limit. Scan stopped. Raise it with --max-files.", "warn")
             return node
 
         if entry.is_dir():
@@ -510,6 +534,7 @@ def build_tree(
                     counter,
                     gitignore_patterns,
                     project_root,
+                    limit,
                 )
             )
             continue

@@ -41,6 +41,7 @@ _KNOWN_KEYS = frozenset(
         "staged",
         "ignore",
         "max_tokens",
+        "max_files",
     }
 )
 
@@ -68,6 +69,7 @@ class ContextaConfig:
     staged: bool | None = None
     ignore: list[str] = field(default_factory=list)
     max_tokens: int | None = None
+    max_files: int | None = None
     warnings: list[str] = field(default_factory=list)
     source: str = ""
 
@@ -91,6 +93,7 @@ class ContextaConfig:
             "diff",
             "staged",
             "max_tokens",
+            "max_files",
         ):
             value = getattr(other, key)
             if value is not None:
@@ -191,6 +194,7 @@ def _parse_table(data: dict, source: str) -> ContextaConfig:
     config.staged = _optional_bool(data, "staged", source)
     config.ignore = _optional_str_list(data, "ignore", source)
     config.max_tokens = _optional_positive_int(data, "max_tokens", source)
+    config.max_files = _optional_positive_int(data, "max_files", source)
     _validate_choices(config, source)
     return config
 
@@ -287,6 +291,9 @@ ignore = []
 # Soft token ceiling. When set, Contexta tightens compression until the
 # pack fits, then stops at lean. Example: 32000
 # max_tokens = 32000
+
+# Stop scanning after this many files (default 2000).
+# max_files = 5000
 """
 
 STARTER_IGNORE_FILE = """\

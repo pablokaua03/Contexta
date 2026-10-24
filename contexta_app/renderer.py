@@ -1694,6 +1694,7 @@ def generate_markdown(
     base_ref: str | None = None,
     locked_fields: tuple[str, ...] = (),
     stats: dict | None = None,
+    max_files: int | None = None,
 ) -> str:
     if log_cb is None:
         log_cb = lambda msg, tag="": None
@@ -1741,6 +1742,7 @@ def generate_markdown(
         counter,
         gitignore_patterns,
         project_path,
+        max_files,
     )
 
     analysis = build_analysis(project_path, full_tree, changed_files, config, log_cb)

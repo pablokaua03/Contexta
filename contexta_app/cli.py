@@ -58,6 +58,7 @@ class RunPlan:
     output: str | None
     copy: bool
     max_tokens: int | None
+    max_files: int | None
     to_stdout: bool
     ask: str
     provider: str
@@ -103,6 +104,8 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--focus", default=None, help="Bias file selection around a topic, for example \"auth flow\"")
     pack.add_argument("-p", "--prompt", default="", help="Custom instruction included in the pack")
     pack.add_argument("--max-tokens", type=int, default=None, help="Tighten compression until the estimate is at or under this many tokens")
+
+    pack.add_argument("--max-files", type=int, default=None, help="Stop scanning after this many files. Default: 2000, or CONTEXTA_MAX_FILES")
 
     git = parser.add_argument_group("git")
     git.add_argument("--diff", action="store_true", help="Prefer git changes when selecting files")
@@ -215,6 +218,8 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         raise ConfigError("Use either --redact or --no-redact, not both.")
     if args.max_tokens is not None and args.max_tokens <= 0:
         raise ConfigError("--max-tokens must be a positive integer.")
+    if args.max_files is not None and args.max_files <= 0:
+        raise ConfigError("--max-files must be a positive integer.")
     if args.base is not None and not str(args.base).strip():
         raise ConfigError("--base needs a git ref. Example: --base main")
 
@@ -273,6 +278,7 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         output=output,
         copy=bool(args.copy or cfg.copy),
         max_tokens=max_tokens,
+        max_files=args.max_files if args.max_files is not None else cfg.max_files,
         to_stdout=to_stdout,
         ask=args.ask or "",
         provider=args.provider or "",
@@ -371,6 +377,7 @@ def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
             focus_query=plan.focus_query,
             redact_secrets=plan.redact_secrets,
             base_ref=plan.base_ref,
+            max_files=plan.max_files,
             locked_fields=tuple(locked),
             log_cb=lambda msg, tag="": status(msg, tag or "info"),
         )
