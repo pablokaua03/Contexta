@@ -6,6 +6,27 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [2.2.1] - 2026-10-24
+
+A fix release. **If you installed 2.2.0 or 2.0.0 from PyPI, `contexta` did not start** (`ModuleNotFoundError: No module named 'contexta'`); upgrade.
+
+### Fixed
+- **The PyPI wheel works.** The console script lived in a top-level module the wheel did not include. `main()` is now `contexta_app/entry.py`, `contexta.py` is a thin launcher, and `python -m contexta_app` works. `scripts/smoke_wheel.py` builds the wheel, installs it in a clean virtualenv and checks `contexta --version`, a pack and `contexta serve` over MCP stdio; the publish workflow runs it before uploading
+- `contexta serve --help` printed "unknown option '--help'" and now prints usage
+- The desktop app's editor MCP setup raised `NameError: messagebox` after writing the config. The config it writes now works from the packaged app (`<exe> serve`) and from a pip install (`python -m contexta_app serve`), and an editor config that cannot be parsed is copied to `.bak` instead of being replaced
+- A directory symlink inside the project (`self -> .`) was followed until the 2000-file cap, listing the same files thousands of times. Directory symlinks that stay inside the project are no longer walked; file symlinks and the rule that links leaving the project are ignored are unchanged
+- The project graph shared the 2000-file cap of a pack and hid it, so on a larger repo `graph impact` answered "(none found in graph)". The graph now has its own limit (50000, or `CONTEXTA_GRAPH_MAX_FILES`), and `graph update` and `graph status` warn when it is reached
+- Any desktop Python project was described as "Scan local repositories and generate curated context packs", Contexta's own purpose
+
+### Added
+- **Token budget** box in the desktop app (`8000`, `8,000` or `32k`), using the same fitter as `--budget`
+- `border_strong` in the theme: inputs, ghost buttons, combo boxes and switch tracks reach 3:1 against their background in both themes
+- CI (`.github/workflows/ci.yml`): the test suite on Linux, Windows and macOS, a wheel smoke test, and ruff in non-blocking mode
+
+### Changed
+- Scan options in the desktop app use one column, so no label is cut off. Entry and Text widgets no longer draw the default white focus ring
+- SECURITY.md and the README now say what touches the network: the one-time download of the `cl100k_base` token encoding, the optional `--ask`, and the GitHub Action's PR comment
+
 ## [2.2.0] - 2026-10-24
 
 Contexta now remembers your project. A local graph of files, symbols, tests and git history answers

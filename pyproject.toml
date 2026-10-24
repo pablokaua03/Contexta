@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "contexta-ai"
-version = "2.2.0"
+version = "2.2.1"
 description = "AI-native codebase context engine. Scans projects and serves intelligent context packs to Claude Code, Cursor, Windsurf, and any MCP-compatible tool."
 readme = "README.md"
 license = "MIT"

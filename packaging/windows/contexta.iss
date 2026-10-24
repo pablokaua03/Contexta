@@ -1,7 +1,7 @@
 #define MyAppName "Contexta"
 ; The build passes /DMyAppVersion=<version from contexta_app/__init__.py>. This default is checked by the tests.
 #ifndef MyAppVersion
-  #define MyAppVersion "2.2.0"
+  #define MyAppVersion "2.2.1"
 #endif
 #define MyAppPublisher "Contexta"
 #define MyAppExeName "contexta.exe"
