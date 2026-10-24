@@ -1186,8 +1186,10 @@ class App(tk.Tk):
         title_label = tk.Label(row, text=title, font=FL, bg=C["card"], fg=C["text"])
         title_label.pack(anchor="w")
         reg(title_label, lambda w: w.configure(bg=C["card"], fg=C["text"]))
-        subtitle_label = tk.Label(row, text=subtitle, font=FT, bg=C["card"], fg=C["text3"])
+        subtitle_label = tk.Label(row, text=subtitle, font=FT, bg=C["card"], fg=C["text3"], justify="left", wraplength=260)
         subtitle_label.pack(anchor="w", pady=(3, 0))
+        # Wrap to the card width. A fixed width clipped the text on narrow cards.
+        parent.bind("<Configure>", lambda e, lab=subtitle_label: lab.configure(wraplength=max(e.width - 8, 160)), add="+")
         reg(subtitle_label, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
         return row
 
