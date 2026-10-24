@@ -48,7 +48,8 @@ def _snapshot_mtimes(path: Path, file_paths: list[Path]) -> dict[str, float]:
             result[str(fp)] = 0.0
 
     for marker in ("package.json", "pyproject.toml", "Cargo.toml", "go.mod",
-                    "requirements.txt", "composer.json", "Gemfile", ".gitignore"):
+                    "requirements.txt", "composer.json", "Gemfile", ".gitignore",
+                    ".contextaignore", "contexta.toml", ".contexta.toml"):
         candidate = path / marker
         if candidate.exists():
             try:

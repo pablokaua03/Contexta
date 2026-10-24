@@ -38,11 +38,13 @@ PACK_HELP = {
     "chatgpt": "Good general-purpose preset for everyday ChatGPT-assisted work.",
     "onboarding": "Best first stop to understand a new codebase fast.",
     "debug": "Pushes changed and suspicious files to the top for bug hunting.",
+    "bugfix": "Daily bug-fix pack for a coding agent: failing area, nearby code, and related tests.",
     "pr_review": "Shapes the pack around code review, risk spotting, and recent changes.",
     "risk_review": "Highlights likely weak spots, regression surfaces, missing test coverage, and shared modules with broader impact.",
     "frontend": "Biases the selection toward interface flows, views, widgets, and user-facing assets.",
     "backend": "Biases the selection toward non-UI application logic, data flow, and integration-heavy modules.",
     "changes_related": "Starts from recent changes and expands outward to the most relevant nearby files.",
+    "refactor": "Collects the modules to change and the files connected to them.",
     "raw_files": "Dumps the most important files with path + full content. Clean and simple — ideal for pasting into any AI.",
 }
 

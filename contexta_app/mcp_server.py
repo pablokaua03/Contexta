@@ -21,8 +21,9 @@ from contexta_app.context_engine import (
     PACK_OPTIONS,
     ExportConfig,
 )
+from contexta_app.redaction import redact_secrets
 from contexta_app.renderer import generate_markdown
-from contexta_app.scanner import get_language, read_file_safe
+from contexta_app.scanner import GitError, get_language, read_file_safe
 
 mcp = FastMCP(
     "Contexta",
@@ -49,6 +50,8 @@ def generate_context(
     focus: str = "",
     diff_mode: bool = False,
     include_hidden: bool = False,
+    base: str = "",
+    redact: bool = True,
 ) -> str:
     """Generate an AI-optimized context pack for a project directory.
 
@@ -58,7 +61,7 @@ def generate_context(
     Args:
         project_path: Absolute path to the project folder.
         pack: Preset — custom, chatgpt, onboarding, pr_review, risk_review,
-              debug, backend, frontend, changes_related, raw_files.
+              debug, bugfix, backend, frontend, changes_related, refactor, raw_files.
         mode: Context mode — full, debug, feature, diff, onboarding, refactor.
         ai_profile: Target AI — generic, chatgpt, claude, gemini, copilot.
         task: Task profile — general, ai_handoff, bug_report, code_review,
@@ -68,6 +71,8 @@ def generate_context(
         focus: Topic to prioritize (e.g. "authentication flow").
         diff_mode: Scope context to git-changed files.
         include_hidden: Include hidden/dot files.
+        base: Git ref to compare against, such as main or origin/main.
+        redact: Replace likely secrets before returning the pack. On by default.
     """
     path = Path(project_path).resolve()
     if not path.is_dir():
@@ -84,7 +89,11 @@ def generate_context(
             compression=compression,
             pack_profile=pack,
             focus_query=focus,
+            redact_secrets=redact,
+            base_ref=base or None,
         )
+    except GitError as exc:
+        return f"Error: {exc}"
     except Exception as exc:
         return f"Error generating context: {exc}"
 
@@ -262,8 +271,14 @@ def read_files(project_path: str, files: list[str]) -> str:
             results.append(f"## `{rel}`\n\nBinary or unreadable file.\n")
             continue
 
+        content, redacted = redact_secrets(content)
         lang = get_language(full) or ""
-        trunc_note = " (truncated to 1000 lines)" if truncated else ""
+        notes = []
+        if truncated:
+            notes.append("truncated to 1000 lines")
+        if redacted:
+            notes.append("secrets redacted")
+        trunc_note = f" ({', '.join(notes)})" if notes else ""
         results.append(f"## `{rel}`{trunc_note}\n\n```{lang}\n{content}\n```\n")
 
     if not results:

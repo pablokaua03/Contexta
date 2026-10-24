@@ -6,6 +6,21 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [2.1.0] - 2026-10-24
+
+### Added
+- **Model token budgets** — every pack reports whether it fits the selected AI profile (GPT-4o, GPT-4.1, Claude Sonnet, Claude Opus, Gemini, Copilot Chat, and a generic long-context fallback). `--max-tokens` tightens compression until the estimate fits
+- **Secret redaction** — API keys, private keys, known tokens, bearer values, and connection-string passwords are replaced with `[REDACTED]` before Markdown, JSON, and MCP `read_files` output. On by default
+- **PR-aware diffs** — `--base main` (or `origin/main`) selects files changed since the merge-base, including uncommitted work
+- **Daily presets** — `bugfix` and `refactor` packs join the existing onboarding and PR review presets
+- **Project config** — `contexta.toml` / `.contexta.toml` for defaults, plus `.contextaignore` and an `ignore` list on top of `.gitignore`. `contexta --init` writes starters. User defaults live in `~/.contexta/config.toml`
+- **CLI handoff** — `--stdout` (and automatic stdout when piped), `--format json`, clipboard fallbacks for Wayland and X11, and errors that say what to run next
+
+### Changed
+- Explicit CLI flags and project config now override pack presets. `--pack pr_review --compression lean` stays lean
+
+---
+
 ## [1.6.0] - 2026-04-19
 
 ### Added

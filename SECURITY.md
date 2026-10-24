@@ -4,8 +4,9 @@
 
 | Version | Supported |
 |---|---|
-| 1.6.x | Yes |
-| < 1.6.0 | No |
+| 2.1.x | Yes |
+| 2.0.x | Yes |
+| < 2.0.0 | No |
 
 ## Reporting a Vulnerability
 
@@ -25,3 +26,4 @@ You can expect a response within 7 days.
 - On some Linux distributions, `tkinter` may come from a system package such as `python3-tk`
 - Windows builds use `Nuitka`; Linux packaging uses `PyInstaller`
 - All processing happens locally on your machine
+- Exports replace likely secrets (API keys, private keys, tokens, connection-string passwords) with `[REDACTED]` before the pack is written. This is best-effort and does not make it safe to commit real credentials

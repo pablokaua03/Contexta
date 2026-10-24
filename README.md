@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
-[![Version](https://img.shields.io/badge/Version-2.0.0-purple)]()
+[![Version](https://img.shields.io/badge/Version-2.1.0-purple)]()
 [![MCP](https://img.shields.io/badge/MCP-Compatible-orange)]()
 
 <br>
@@ -103,6 +103,9 @@ Results are cached in memory with automatic invalidation. First call analyzes th
 
 ```bash
 pip install contexta-ai
+# or, for a clean isolated CLI:
+pipx install contexta-ai
+contexta --help
 ```
 
 Optional AI API integrations:
@@ -135,15 +138,19 @@ python contexta.py
 
 ```bash
 # Generate context packs
-contexta ./project                                          # default pack
-contexta ./project --pack onboarding                        # understand a new codebase
-contexta ./project --pack raw_files                         # clean path + content dump
-contexta ./project --pack pr_review --diff --copy           # review changes
-contexta ./project --mode debug --focus "auth flow"         # debug a specific area
+contexta .                                                   # default pack, or contexta.toml
+contexta . --pack onboarding --copy                         # understand a repo, then paste it
+contexta . --pack bugfix --focus "login timeout"            # fix a bug with a coding agent
+contexta . --pack pr_review --base main --stdout            # review this branch against main
+contexta . --pack refactor --format json -o pack.json       # hand a refactor pack to another tool
+contexta . --pack raw_files                                 # clean path + content dump
+
+# First-time project setup
+contexta --init                                              # writes contexta.toml and .contextaignore
 
 # AI API integration — send context + question directly to an AI
-contexta ./project --ask "what are the main security risks?"
-contexta ./project --ask "explain the architecture" --provider claude
+contexta . --ask "what are the main security risks?"
+contexta . --ask "explain the architecture" --provider claude
 
 # Configure AI API keys
 contexta --configure-ai
@@ -153,19 +160,44 @@ contexta --configure-ai
 
 | Flag | Description |
 |---|---|
-| `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related`, `raw_files` |
+| `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `bugfix`, `backend`, `frontend`, `changes_related`, `refactor`, `raw_files` |
 | `--mode` | Context mode: `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
 | `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
-| `--ai` | Target AI profile: `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
+| `--ai` | Target AI profile used for budget guidance: `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
 | `--task` | Task profile: `general`, `ai_handoff`, `bug_report`, `code_review`, `explain_project`, `risk_analysis`, `refactor_request`, `pr_summary`, `write_tests`, `find_dead_code` |
 | `--focus` | Bias scoring around a topic (e.g. `"auth flow"`, `"database"`) |
 | `--diff` / `--staged` | Use git changes as context |
+| `--base` | Compare against a git ref such as `main` or `origin/main` (merge-base diff plus uncommitted work) |
+| `--max-tokens` | Tighten compression until the estimate fits this budget |
+| `--format` | `md` (default) or `json` |
+| `--stdout` | Write the pack to stdout. Also happens automatically when stdout is piped |
+| `--redact` / `--no-redact` | Secret redaction is on by default |
+| `--init` | Write `contexta.toml` and `.contextaignore` if they are missing |
 | `--ask` | Send context pack + prompt to an AI API |
 | `--provider` | AI provider: `claude`, `gemini`, `openai` |
 | `--api-key` | API key (also reads `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`) |
 | `--configure-ai` | Interactive AI API setup |
 | `-c` / `--copy` | Copy output to clipboard |
-| `-o` / `--output` | Custom output path |
+| `-o` / `--output` | Custom output path. Use `-` for stdout |
+
+CLI flags override `contexta.toml`, which overrides `~/.contexta/config.toml`. An explicit flag also wins over a pack preset, so `--pack pr_review --compression lean` stays lean.
+
+### Daily handoff
+
+| You are about to... | Command |
+|---|---|
+| Paste a project tour into a chat | `contexta . --pack onboarding --copy` |
+| Fix a bug with Cursor, Claude Code, or Copilot | `contexta . --pack bugfix --focus "checkout error"` |
+| Review the current branch against main | `contexta . --pack pr_review --base main --stdout` |
+| Plan a refactor | `contexta . --pack refactor` |
+
+The pack footer reports whether the export fits the selected profile. Planning windows include GPT-4o (128k), GPT-4.1 (about 1M), Claude Sonnet and Opus (200k), Gemini Flash and Pro (about 1M), and Copilot Chat / coding agent (64k / 128k). Contexta reserves 20% of each window for the question and the reply. These are planning numbers, not a provider quota.
+
+Set `max_tokens` in `contexta.toml`, or pass `--max-tokens`, and Contexta retries with tighter compression until the estimate fits or it reaches `lean`.
+
+Before the pack is written, likely secrets are replaced with `[REDACTED]`: API keys, private keys, known token prefixes, bearer tokens, and passwords in connection strings. Placeholders such as `your-api-key` are kept. This is best-effort and does not replace keeping secrets out of the tree. `--no-redact` disables it.
+
+`contexta --init` writes a starter `contexta.toml` and `.contextaignore`. `.gitignore` is always applied. `.contextaignore` and the config `ignore` list add pack-only exclusions, using gitignore syntax, without changing what git tracks. A sample project file lives at [`docs/contexta.toml.example`](docs/contexta.toml.example).
 
 ---
 
@@ -177,6 +209,8 @@ contexta --configure-ai
 | `pr_review` | Code review with change context |
 | `risk_review` | Regression hotspots, missing coverage, broad-impact modules |
 | `debug` | Bug hunting with changed/suspicious files prioritized |
+| `bugfix` | Daily bug-fix handoff for a coding agent |
+| `refactor` | Modules to change plus the files connected to them |
 | `backend` / `frontend` | Bias toward one side of the app |
 | `changes_related` | Git changes + nearby relevant files |
 | `raw_files` | Clean dump of important files — path + full content, no analysis |
@@ -211,7 +245,11 @@ Depending on pack, mode, and task, the output can include:
 | **Project fingerprinting** | Detects stack, frameworks, domain, and project type automatically |
 | **Syntax-aware analysis** | tree-sitter + heuristic fallback for symbol extraction |
 | **Multi-language** | Python, JS/TS, Go, Rust, PHP, Java, C#, Kotlin, Swift, C++ and more |
-| **Token guidance** | tiktoken-backed estimates for pack sizing |
+| **Token budgets** | Per-profile fit report (fits / tight / over) plus `--max-tokens` auto-tightening |
+| **Secret redaction** | Common credentials are stripped before Markdown or JSON export |
+| **PR base diff** | `--base main` packs the branch since the merge-base, plus uncommitted work |
+| **Project config** | `contexta.toml`, `.contextaignore`, and optional `~/.contexta/config.toml` |
+| **JSON export** | `--format json` wraps the same pack for tools that want structured input |
 | **Inline blob protection** | Collapses base64/binary literals automatically |
 | **PyPI package** | `pip install contexta-ai` with optional AI extras |
 
@@ -245,6 +283,7 @@ python -m pytest tests/ -k "not test_relation_score"
 - No runtime telemetry or network requirement (except optional `--ask` AI calls)
 - Scan limits prevent runaway exports
 - Embedded binary/blob payloads are suppressed automatically
+- Likely secrets are redacted in exports and in MCP `read_files` unless `--no-redact` is set
 - AI API keys are stored locally in `~/.contexta/ai_config.json` when using `--configure-ai`
 
 ---

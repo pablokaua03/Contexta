@@ -64,9 +64,11 @@ PACK_OPTIONS: dict[str, str] = {
     "pr_review": "PR Review Pack",
     "risk_review": "Risk Review Pack",
     "debug": "Debug Pack",
+    "bugfix": "Bugfix Pack",
     "backend": "Backend Pack",
     "frontend": "Frontend Pack",
     "changes_related": "Changes + Related",
+    "refactor": "Refactor Pack",
     "raw_files": "Raw Files Dump",
 }
 
@@ -101,6 +103,12 @@ PACK_DEFAULTS: dict[str, dict[str, str]] = {
         "task_profile": "bug_report",
         "compression": "focused",
     },
+    "bugfix": {
+        "ai_profile": "claude",
+        "context_mode": "debug",
+        "task_profile": "bug_report",
+        "compression": "focused",
+    },
     "backend": {
         "ai_profile": "generic",
         "context_mode": "feature",
@@ -119,6 +127,12 @@ PACK_DEFAULTS: dict[str, dict[str, str]] = {
         "ai_profile": "claude",
         "context_mode": "debug",
         "task_profile": "code_review",
+        "compression": "focused",
+    },
+    "refactor": {
+        "ai_profile": "generic",
+        "context_mode": "refactor",
+        "task_profile": "refactor_request",
         "compression": "focused",
     },
     "raw_files": {
@@ -560,6 +574,7 @@ class ExportConfig:
     compression: str = "balanced"
     pack_profile: str = "custom"
     focus_query: str = ""
+    locked_fields: tuple[str, ...] = ()
 
 
 @dataclass
@@ -656,10 +671,13 @@ class ProjectAnalysis:
 
 def resolve_config(config: ExportConfig) -> ExportConfig:
     resolved = replace(config)
+    locked = set(resolved.locked_fields)
     if resolved.pack_profile in PACK_DEFAULTS:
         for key, value in PACK_DEFAULTS[resolved.pack_profile].items():
+            if key in locked:
+                continue
             setattr(resolved, key, value)
-    if resolved.diff_mode and resolved.context_mode == "full":
+    if resolved.diff_mode and resolved.context_mode == "full" and "context_mode" not in locked:
         resolved.context_mode = "diff"
     return resolved
 
@@ -4718,6 +4736,9 @@ def select_debug_files(
         item.relpath.as_posix()
         for item in (changed[:6] + focus_matches[:6] + [entry for entry in important if {"async", "integration", "analysis", "scanner"} & entry.tags][:4])
     }
+    if not selected:
+        fallback = [item for item in important if "test" not in item.tags and "docs" not in item.tags][:6]
+        selected = {item.relpath.as_posix() for item in (fallback or important[:6])}
     selected = expand_with_related(selected, lookup, reverse_index, include_dependents=True)
     selected = add_related_tests(selected, lookup, tests, limit=4)
     ordered = [lookup[rel] for rel in selected if rel in lookup]

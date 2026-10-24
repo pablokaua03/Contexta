@@ -189,20 +189,78 @@ def get_language(filepath: Path) -> str | None:
     return CODE_EXTENSIONS.get(filepath.suffix.lower())
 
 
-def load_gitignore_patterns(root: Path) -> list[str]:
-    """Read .gitignore at project root and return raw gitwildmatch patterns."""
-    gitignore = root / ".gitignore"
-    if not gitignore.is_file():
+class GitError(Exception):
+    """Git context was requested but cannot be collected."""
+
+
+class GitRefError(GitError):
+    def __init__(self, ref: str):
+        self.ref = ref
+        super().__init__(
+            f"Git ref '{ref}' was not found. "
+            "Check the branch name, or pass a remote ref such as origin/main."
+        )
+
+
+def _read_ignore_file(path: Path) -> list[str]:
+    if not path.is_file():
         return []
     patterns: list[str] = []
     try:
-        for line in gitignore.read_text(encoding="utf-8", errors="ignore").splitlines():
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
                 patterns.append(line)
     except Exception:
         pass
     return patterns
+
+
+def load_gitignore_patterns(root: Path) -> list[str]:
+    """Return ignore rules from .gitignore, .contextaignore, and contexta.toml.
+
+    ``.contextaignore`` and the config ``ignore`` list use gitignore syntax and
+    are applied after ``.gitignore``, so a later ``!`` rule can un-ignore a path.
+    """
+    patterns = _read_ignore_file(root / ".gitignore")
+    patterns.extend(_read_ignore_file(root / ".contextaignore"))
+    from contexta_app.config import project_ignore_patterns
+
+    patterns.extend(project_ignore_patterns(root))
+    return patterns
+
+
+def git_state(root: Path) -> str:
+    """Return ``ok``, ``missing-git``, or ``not-repo``."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return "missing-git"
+    except subprocess.TimeoutExpired:
+        return "not-repo"
+    if result.returncode != 0 or result.stdout.strip() != "true":
+        return "not-repo"
+    return "ok"
+
+
+def git_ref_exists(root: Path, ref: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", ref],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 @lru_cache(maxsize=16)
@@ -279,31 +337,38 @@ def matches_gitignore(path: Path, root: Path, patterns: list[str]) -> bool:
     return ignored
 
 
-def get_git_changed_files(root: Path, staged_only: bool = False) -> list[Path] | None:
+def get_git_changed_files(
+    root: Path,
+    staged_only: bool = False,
+    base_ref: str | None = None,
+) -> list[Path] | None:
     """
-    Return list of changed files via git diff.
-    Returns None if not a git repo or git is unavailable.
+    Return changed files via git diff.
+
+    ``base_ref`` compares the branch to that ref (three-dot, merge-base) and
+    also includes uncommitted work. Raises GitRefError when the ref does not
+    exist. Returns None if this is not a git repo or git is unavailable.
     """
     try:
-        inside_work_tree = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if inside_work_tree.returncode != 0 or inside_work_tree.stdout.strip() != "true":
+        if git_state(root) != "ok":
             return None
-
-        commands = (
-            [["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"]]
-            if staged_only
-            else [
+        if base_ref:
+            if not git_ref_exists(root, base_ref):
+                raise GitRefError(base_ref)
+            commands = [
+                ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base_ref}...HEAD"],
                 ["git", "diff", "--name-only", "--diff-filter=ACMR"],
                 ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
                 ["git", "ls-files", "--others", "--exclude-standard"],
             ]
-        )
+        elif staged_only:
+            commands = [["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"]]
+        else:
+            commands = [
+                ["git", "diff", "--name-only", "--diff-filter=ACMR"],
+                ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+                ["git", "ls-files", "--others", "--exclude-standard"],
+            ]
 
         changed_relpaths: set[str] = set()
         for cmd in commands:
@@ -328,6 +393,8 @@ def get_git_changed_files(root: Path, staged_only: bool = False) -> list[Path] |
             if path.is_file():
                 files.append(path)
         return files
+    except GitRefError:
+        raise
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 

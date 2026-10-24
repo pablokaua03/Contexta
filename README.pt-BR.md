@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Plataforma](https://img.shields.io/badge/Plataforma-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
-[![Versão](https://img.shields.io/badge/Vers%C3%A3o-2.0.0-purple)]()
+[![Versão](https://img.shields.io/badge/Vers%C3%A3o-2.1.0-purple)]()
 [![MCP](https://img.shields.io/badge/MCP-Compatível-orange)]()
 
 <br>
@@ -103,6 +103,9 @@ Resultados ficam em memória com invalidação automática. A primeira chamada a
 
 ```bash
 pip install contexta-ai
+# ou, para um CLI isolado:
+pipx install contexta-ai
+contexta --help
 ```
 
 Integrações opcionais com APIs de IA:
@@ -135,15 +138,19 @@ python contexta.py
 
 ```bash
 # Gerar context packs
-contexta ./projeto                                          # pack padrão
-contexta ./projeto --pack onboarding                        # entender um codebase novo
-contexta ./projeto --pack raw_files                         # dump limpo de caminho + conteúdo
-contexta ./projeto --pack pr_review --diff --copy           # revisar mudanças
-contexta ./projeto --mode debug --focus "auth flow"         # debugar uma área específica
+contexta .                                                   # pack padrão, ou contexta.toml
+contexta . --pack onboarding --copy                         # entender um repo e colar no chat
+contexta . --pack bugfix --focus "login timeout"            # corrigir um bug com um agente
+contexta . --pack pr_review --base main --stdout            # revisar o branch contra main
+contexta . --pack refactor --format json -o pack.json       # pack de refactor em JSON
+contexta . --pack raw_files                                 # dump limpo de caminho + conteúdo
+
+# Configuração inicial do projeto
+contexta --init                                              # cria contexta.toml e .contextaignore
 
 # Integração com API de IA — envia contexto + pergunta direto para uma IA
-contexta ./projeto --ask "quais são os principais riscos de segurança?"
-contexta ./projeto --ask "explique a arquitetura" --provider claude
+contexta . --ask "quais são os principais riscos de segurança?"
+contexta . --ask "explique a arquitetura" --provider claude
 
 # Configurar chaves de API
 contexta --configure-ai
@@ -153,19 +160,29 @@ contexta --configure-ai
 
 | Flag | Descrição |
 |---|---|
-| `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related`, `raw_files` |
+| `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `bugfix`, `backend`, `frontend`, `changes_related`, `refactor`, `raw_files` |
 | `--mode` | Modo: `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
 | `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
-| `--ai` | Perfil de IA: `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
+| `--ai` | Perfil usado no orçamento de tokens: `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
 | `--task` | Tarefa: `general`, `ai_handoff`, `bug_report`, `code_review`, `explain_project`, `risk_analysis`, `refactor_request`, `pr_summary`, `write_tests`, `find_dead_code` |
 | `--focus` | Direciona scoring para um tópico (ex: `"auth flow"`, `"database"`) |
 | `--diff` / `--staged` | Usa mudanças do git como contexto |
+| `--base` | Compara com uma ref git, como `main` ou `origin/main` |
+| `--max-tokens` | Aperta a compressão até a estimativa caber nesse orçamento |
+| `--format` | `md` (padrão) ou `json` |
+| `--stdout` | Escreve o pack na stdout. Também acontece quando a stdout está em pipe |
+| `--redact` / `--no-redact` | Redação de segredos ligada por padrão |
+| `--init` | Cria `contexta.toml` e `.contextaignore` se ainda não existirem |
 | `--ask` | Envia context pack + prompt para uma API de IA |
 | `--provider` | Provedor: `claude`, `gemini`, `openai` |
 | `--api-key` | Chave da API (também lê `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`) |
 | `--configure-ai` | Setup interativo de API de IA |
 | `-c` / `--copy` | Copia saída para o clipboard |
-| `-o` / `--output` | Caminho de saída customizado |
+| `-o` / `--output` | Caminho de saída. Use `-` para stdout |
+
+Flags do CLI vencem o `contexta.toml`, que vence `~/.contexta/config.toml`. Uma flag explícita também vence o preset, então `--pack pr_review --compression lean` continua lean.
+
+O rodapé do pack diz se o export cabe no perfil escolhido. Segredos comuns (chaves de API, tokens, chaves privadas e senhas em connection strings) viram `[REDACTED]` antes da escrita. `contexta --init` cria a config e o `.contextaignore`. O `.gitignore` continua valendo; o `.contextaignore` e a lista `ignore` excluem arquivos só do pack. Exemplo em [`docs/contexta.toml.example`](docs/contexta.toml.example).
 
 ---
 
@@ -177,6 +194,8 @@ contexta --configure-ai
 | `pr_review` | Code review com contexto de mudanças |
 | `risk_review` | Hotspots de regressão, cobertura faltante, módulos de alto impacto |
 | `debug` | Bug hunting com arquivos suspeitos priorizados |
+| `bugfix` | Handoff diário de bugfix para um agente de código |
+| `refactor` | Módulos a mudar e os arquivos ligados a eles |
 | `backend` / `frontend` | Foco em um lado da aplicação |
 | `changes_related` | Mudanças do git + arquivos relevantes próximos |
 | `raw_files` | Dump limpo dos arquivos importantes — caminho + conteúdo, sem análise |
@@ -211,7 +230,11 @@ Dependendo do pack, modo e tarefa, a saída pode incluir:
 | **Fingerprinting** | Detecta stack, frameworks, domínio e tipo de projeto automaticamente |
 | **Análise syntax-aware** | tree-sitter + fallback heurístico para extração de símbolos |
 | **Multi-linguagem** | Python, JS/TS, Go, Rust, PHP, Java, C#, Kotlin, Swift, C++ e mais |
-| **Estimativa de tokens** | tiktoken para dimensionamento de packs |
+| **Orçamento de tokens** | Relatório fits / tight / over por perfil, com `--max-tokens` |
+| **Redação de segredos** | Credenciais comuns são removidas antes do export Markdown ou JSON |
+| **Diff de PR** | `--base main` inclui o que mudou desde o merge-base, mais o trabalho local |
+| **Config do projeto** | `contexta.toml`, `.contextaignore` e `~/.contexta/config.toml` opcional |
+| **Export JSON** | `--format json` embrulha o mesmo pack para outras ferramentas |
 | **Proteção contra blobs** | Colapsa literais base64/binários automaticamente |
 | **Pacote PyPI** | `pip install contexta-ai` com extras opcionais de IA |
 
@@ -245,6 +268,7 @@ python -m pytest tests/ -k "not test_relation_score"
 - Sem telemetria ou necessidade de rede (exceto `--ask` opcional)
 - Limites de scan evitam exports descontrolados
 - Payloads binários/base64 suprimidos automaticamente
+- Segredos prováveis são redatados nos exports e no `read_files` do MCP, a menos que `--no-redact` seja usado
 - Chaves de API ficam em `~/.contexta/ai_config.json` quando usando `--configure-ai`
 
 ---
