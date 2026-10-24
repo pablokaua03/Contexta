@@ -144,3 +144,11 @@ def test_gui_without_tk_prints_a_hint(tmp_path):
     result = subprocess.run([sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
     assert "needs Tk" in result.stderr and "python3-tk" in result.stderr
+
+
+def test_help_is_short_and_has_examples():
+    text = subprocess.run([sys.executable, str(ROOT / "contexta.py"), "--help"], capture_output=True, text=True, timeout=30).stdout
+    usage = text.split("\n\n")[0]
+    assert len(usage.splitlines()) <= 10
+    for needle in ("--for bugfix", "contexta graph impact", "contexta install", "--no-graph", "contexta serve"):
+        assert needle in text

@@ -96,14 +96,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "examples:\n"
-            "  contexta .\n"
-            "  contexta . --pack onboarding --copy\n"
-            "  contexta . --pack bugfix --focus \"login timeout\"\n"
-            "  contexta . --pack pr_review --base main --stdout\n"
-            "  contexta . --pack refactor --format json -o pack.json\n"
-            "  contexta . --budget 20000 --focus \"session cookie signing\"\n"
-            "  contexta --init\n"
-            "  contexta serve\n"
+            "  contexta .                                   pack the project into contexta-<name>.md\n"
+            "  contexta . --for bugfix --focus \"login timeout\" --budget 20000\n"
+            "  contexta . --for review --stdout             diff against main, with impacted tests\n"
+            "  contexta . --for onboard --copy              a map of the project, on the clipboard\n"
+            "  contexta . --budget 8000 --no-graph          cut to 8k tokens, without .contexta/\n"
+            "  contexta . --format json -o pack.json\n"
+            "\n"
+            "other commands:\n"
+            "  contexta graph impact src/app.py             what a change touches, and which tests to run\n"
+            "  contexta graph map --budget 2000 --focus auth   ranked symbol map\n"
+            "  contexta install cursor|claude|copilot|mcp   agent rules and MCP config, never overwritten\n"
+            "  contexta serve                               MCP server over stdio\n"
+            "  contexta --init                              write contexta.toml and .contextaignore\n"
+            "\n"
+            "Run 'contexta graph --help' or 'contexta install --help' for those commands.\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -116,11 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--for", dest="for_task", choices=sorted(FOR_PACKS), default=None, metavar="TASK",
         help="What you are about to do: bugfix, review (against main), onboard, or refactor. Picks the pack for you",
     )
-    pack.add_argument("--pack", choices=sorted(PACK_OPTIONS), default=None, help="Preset workflow. Default: custom, or the pack in contexta.toml")
-    pack.add_argument("--mode", choices=sorted(CONTEXT_MODE_OPTIONS), default=None, help="How files are chosen: full, debug, feature, diff, onboarding, refactor")
-    pack.add_argument("--ai", choices=sorted(AI_PROFILE_OPTIONS), default=None, help="Model profile used for budget guidance: generic, chatgpt, claude, gemini, copilot")
-    pack.add_argument("--task", choices=sorted(TASK_PROFILE_OPTIONS), default=None, help="Task lens such as bug_report, code_review, explain_project, or refactor_request")
-    pack.add_argument("--compression", choices=sorted(COMPRESSION_OPTIONS), default=None, help="How much source to keep: full, balanced, focused, signatures, lean")
+    pack.add_argument("--pack", choices=sorted(PACK_OPTIONS), default=None, metavar="NAME", help="Preset workflow: " + ", ".join(sorted(PACK_OPTIONS)) + ". Default: custom, or the pack in contexta.toml")
+    pack.add_argument("--mode", choices=sorted(CONTEXT_MODE_OPTIONS), default=None, metavar="MODE", help="How files are chosen: full, debug, feature, diff, onboarding, refactor")
+    pack.add_argument("--ai", choices=sorted(AI_PROFILE_OPTIONS), default=None, metavar="MODEL", help="Model profile used for budget guidance: generic, chatgpt, claude, gemini, copilot")
+    pack.add_argument("--task", choices=sorted(TASK_PROFILE_OPTIONS), default=None, metavar="LENS", help="Task lens: " + ", ".join(sorted(TASK_PROFILE_OPTIONS)))
+    pack.add_argument("--compression", choices=sorted(COMPRESSION_OPTIONS), default=None, metavar="LEVEL", help="How much source to keep: full, balanced, focused, signatures, lean")
     pack.add_argument("--focus", default=None, help="Bias file selection around a topic, for example \"auth flow\"")
     pack.add_argument("-p", "--prompt", default="", help="Custom instruction included in the pack")
     pack.add_argument(
@@ -129,8 +136,9 @@ def build_parser() -> argparse.ArgumentParser:
              "The pack says what was left out. Combine with --focus to spend it where you care",
     )
 
-    pack.add_argument("--no-graph", action="store_true", help="Do not read or write .contexta/graph.db. Graph ranking and the large-repo prefilter are off")
-    pack.add_argument("--max-files", type=int, default=None, help="Stop scanning after this many files. Default: 2000, or CONTEXTA_MAX_FILES")
+    scan = parser.add_argument_group("scan and graph")
+    scan.add_argument("--no-graph", action="store_true", help="Do not read or write .contexta/graph.db. Graph ranking and the large-repo prefilter are off")
+    scan.add_argument("--max-files", type=int, default=None, help="Stop scanning after this many files. Default: 2000, or CONTEXTA_MAX_FILES")
 
     git = parser.add_argument_group("git")
     git.add_argument("--diff", action="store_true", help="Prefer git changes when selecting files")
