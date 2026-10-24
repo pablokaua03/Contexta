@@ -17,7 +17,7 @@ def matches_focus(item: FileInsight, query: str) -> bool:
 def _keyword_forms(keyword: str) -> tuple[str, ...]:
     """The keyword plus a crude stem, so 'signing' also finds 'signer' and 'signature'."""
     forms = [keyword]
-    for suffix in ("ing", "ers", "er", "ed", "es", "s"):
+    for suffix in ("ing", "ation", "ion", "ers", "er", "ed", "es", "s", "y"):
         if keyword.endswith(suffix) and len(keyword) - len(suffix) >= 4:
             forms.append(keyword[: -len(suffix)])
             break

@@ -152,3 +152,18 @@ def test_help_is_short_and_has_examples():
     assert len(usage.splitlines()) <= 10
     for needle in ("--for bugfix", "contexta graph impact", "contexta install", "--no-graph", "contexta serve"):
         assert needle in text
+
+
+def test_signatures_keep_the_focus_match_and_top_level_defs_when_cut():
+    from contexta_app.engine.excerpts import extract_signatures
+
+    class Item:
+        lang = "python"
+        content = "".join(f"def helper_{i}():\n    pass\n" for i in range(30)) + "async def solve_dependencies():\n    pass\n\nclass Late:\n    def method(self):\n        pass\n"
+
+    plain = extract_signatures(Item, "", 5)
+    assert "class Late:" in plain and len(plain) == 5
+    focused = extract_signatures(Item, "dependency injection solving", 5)
+    assert "async def solve_dependencies():" in focused
+    assert focused == [line for line in focused]  # no duplicates, source order kept
+    assert extract_signatures(Item, "", 100)[-1] == "def method(self):"

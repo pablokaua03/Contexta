@@ -12,25 +12,42 @@ from contexta_app.engine.blobs import (
     sanitize_excerpt_lines,
 )
 from contexta_app.engine.focus import (
+    _keyword_forms,
     extract_keywords,
 )
 
-def extract_signatures(item: FileInsight) -> list[str]:
-    signatures: list[str] = []
+def extract_signatures(item: FileInsight, focus: str = "", limit: int = 18) -> list[str]:
+    """Up to ``limit`` definitions, shown in source order.
+
+    When there are more than fit, the ones that match the focus words come first, then classes, then top-level
+    functions, then methods. Source order alone cut a 1,400-line module off before its main function.
+    """
+    entries: list[tuple[int, str, bool]] = []
     lines = item.content.splitlines()
 
     if item.lang == "python":
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("def ") or stripped.startswith("async def ") or stripped.startswith("class "):
-                signatures.append(stripped)
+        starts = ("def ", "async def ", "class ")
     elif item.lang in {"javascript", "jsx", "typescript", "tsx"}:
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("export ") or stripped.startswith("function ") or stripped.startswith("class "):
-                signatures.append(stripped)
+        starts = ("export ", "function ", "class ")
+    else:
+        return []
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(starts):
+            entries.append((index, stripped, line[:1] not in {" ", "\t"}))
 
-    return signatures[:18]
+    if len(entries) <= limit:
+        return [text for _, text, _ in entries]
+    stems = [form for word in extract_keywords(focus) for form in _keyword_forms(word)] if focus else []
+
+    def priority(entry: tuple[int, str, bool]) -> tuple[int, int, int]:
+        lower = entry[1].lower().replace("_", "")
+        matched = any(stem.replace("_", "") in lower for stem in stems)
+        tier = 0 if entry[1].startswith("class ") and entry[2] else (1 if entry[2] else 2)
+        return (0 if matched else 1, tier, entry[0])
+
+    chosen = sorted(sorted(entries, key=priority)[:limit], key=lambda entry: entry[0])
+    return [text for _, text, _ in chosen]
 
 def extract_relevant_excerpt(item: FileInsight, query: str, max_lines: int = 90) -> tuple[str, str]:
     lines = item.content.splitlines()
@@ -67,7 +84,7 @@ def extract_relevant_excerpt(item: FileInsight, query: str, max_lines: int = 90)
         if symbol_matches:
             excerpt_lines = [
                 stripped
-                for stripped in extract_signatures(item)
+                for stripped in extract_signatures(item, query, 200)
                 if any(symbol in stripped for symbol in symbol_matches)
             ]
             if excerpt_lines:

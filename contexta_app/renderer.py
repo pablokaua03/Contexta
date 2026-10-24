@@ -351,8 +351,8 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
     if include_score_details and getattr(item, "score_breakdown", None):
         parts.append(f"- Score breakdown: {'; '.join(item.score_breakdown[:6])}")
 
-    signatures = extract_signatures(item)
     focus_query = config.focus_query or config.system_prompt
+    signatures = extract_signatures(item, focus_query, 18)
 
     # Always sanitize inline blobs regardless of compression mode.
     # A 15 000-char base64 constant adds zero semantic value to any review.
@@ -364,7 +364,7 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
         excerpt, _ = sanitize_inline_blobs(excerpt)
         if signatures:
             parts.append("\n```text")
-            parts.extend(signatures[:5])
+            parts.extend(extract_signatures(item, focus_query, 5))
             parts.append("```")
         parts.append(f"\n> {refine_onboarding_excerpt_reason(reason, item)}")
         parts.append(f"\n```{item.lang or 'text'}\n{excerpt}\n```")
@@ -382,7 +382,7 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
         # unless the file is a critical entrypoint with a very low line count.
         if signatures:
             parts.append("\n```text")
-            parts.extend(signatures[:5])
+            parts.extend(extract_signatures(item, focus_query, 5))
             parts.append("```")
         elif item.score >= 10 and item.line_count <= 60:
             parts.append(f"\n```{item.lang or 'text'}\n{clean_content}\n```")
@@ -406,13 +406,13 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
             excerpt, _ = sanitize_inline_blobs(excerpt)
             if signatures:
                 parts.append("\n```text")
-                parts.extend(signatures[:10])
+                parts.extend(extract_signatures(item, focus_query, 10))
                 parts.append("```")
             parts.append(f"\n> {reason}")
             parts.append(f"\n```{item.lang or 'text'}\n{excerpt}\n```")
         elif signatures:
             parts.append("\n```text")
-            parts.extend(signatures[:10])
+            parts.extend(extract_signatures(item, focus_query, 10))
             parts.append("```")
         else:
             excerpt, reason = extract_relevant_excerpt(item, focus_query, 30)
@@ -431,7 +431,7 @@ def render_file_section(item, config: ExportConfig, include_score_details: bool 
             excerpt, _ = sanitize_inline_blobs(excerpt)
             if signatures:
                 parts.append("\n```text")
-                parts.extend(signatures[:12])
+                parts.extend(extract_signatures(item, focus_query, 12))
                 parts.append("```")
             parts.append(f"\n> {reason}")
             parts.append(f"\n```{item.lang or 'text'}\n{excerpt}\n```")
