@@ -549,7 +549,7 @@ def build_tree(
                 continue
             if gitignore_patterns and matches_gitignore(entry, project_root, gitignore_patterns):
                 continue
-            log_cb(f"Scanning directory: {entry.relative_to(root.parent)}", "muted")
+            log_cb(f"Scanning directory: {entry.relative_to(project_root).as_posix()}", "muted")
             node["dirs"].append(
                 build_tree(
                     entry,

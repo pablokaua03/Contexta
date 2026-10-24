@@ -1848,7 +1848,7 @@ def _generate_markdown_once(
         fallback_changed_lines,
         analysis.diff_fallback_notice,
     )
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     md: list[str] = [
         f"# 🧭 {APP_NAME} Project Context Pack: `{project_path.name}`",
