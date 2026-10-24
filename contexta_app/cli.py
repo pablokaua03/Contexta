@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from contexta_app.cli_style import format_ai_header, format_banner, format_log_line, format_saved, paint
 from contexta_app.context_engine import (
     AI_PROFILE_OPTIONS,
     COMPRESSION_OPTIONS,
@@ -19,6 +20,13 @@ from contexta_app.renderer import __version__, generate_markdown
 from contexta_app.utils import get_desktop, safe_project_name
 
 
+def _emit(text: str, stream=None) -> None:
+    if not text:
+        return
+    target = sys.stdout if stream is None else stream
+    print(text, file=target)
+
+
 def copy_to_clipboard(text: str) -> None:
     try:
         if sys.platform == "win32":
@@ -28,16 +36,24 @@ def copy_to_clipboard(text: str) -> None:
             subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
         else:
             subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode("utf-8"), check=True)
-        print("Copied to clipboard.")
+        _emit(paint("Copied to clipboard.", "ok"))
     except Exception as exc:
-        print(f"Could not copy to clipboard: {exc}")
+        _emit(paint(f"Could not copy to clipboard: {exc}", "err", sys.stderr), sys.stderr)
 
 
 def safe_print(text: str) -> None:
     stream = getattr(sys.stdout, "buffer", None)
     encoding = sys.stdout.encoding or "utf-8"
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
     if stream is not None:
         stream.write((text + "\n").encode(encoding, errors="replace"))
+        try:
+            stream.flush()
+        except Exception:
+            pass
     else:
         print(text.encode(encoding, errors="replace").decode(encoding))
 
@@ -87,8 +103,10 @@ def run_cli() -> None:
 
     project_path = Path(args.project).resolve()
     if not project_path.is_dir():
-        print(f"'{project_path}' is not a valid directory.", file=sys.stderr)
+        _emit(paint(f"'{project_path}' is not a valid directory.", "err", sys.stderr), sys.stderr)
         sys.exit(1)
+
+    _emit(format_banner(__version__, project_path.name, args.pack))
 
     markdown = generate_markdown(
         project_path,
@@ -103,7 +121,7 @@ def run_cli() -> None:
         compression=args.compression,
         pack_profile=args.pack,
         focus_query=args.focus,
-        log_cb=lambda msg, tag="": safe_print(msg),
+        log_cb=lambda msg, tag="": safe_print(format_log_line(msg, tag)),
     )
 
     safe_name = safe_project_name(project_path.name)
@@ -111,7 +129,7 @@ def run_cli() -> None:
     output_path = Path(args.output) if args.output else (get_desktop() / default_name)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(markdown, encoding="utf-8")
-    safe_print(f"\nSaved: {output_path}")
+    safe_print(format_saved(str(output_path)))
 
     if args.copy:
         copy_to_clipboard(markdown)
@@ -137,10 +155,14 @@ def run_cli() -> None:
             if available:
                 provider = available[0]
             else:
-                print(
-                    "\nError: No AI provider configured. Use --provider, --configure-ai, "
-                    "or install an SDK (pip install anthropic / google-genai / openai).",
-                    file=sys.stderr,
+                _emit(
+                    paint(
+                        "\nError: No AI provider configured. Use --provider, --configure-ai, "
+                        "or install an SDK (pip install anthropic / google-genai / openai).",
+                        "err",
+                        sys.stderr,
+                    ),
+                    sys.stderr,
                 )
                 sys.exit(1)
 
@@ -148,9 +170,13 @@ def run_cli() -> None:
         available = get_available_providers()
         if provider not in available:
             pkg = {"claude": "anthropic", "gemini": "google-genai", "openai": "openai"}[provider]
-            print(
-                f"\nError: SDK for '{provider}' is not installed. Run: pip install {pkg}",
-                file=sys.stderr,
+            _emit(
+                paint(
+                    f"\nError: SDK for '{provider}' is not installed. Run: pip install {pkg}",
+                    "err",
+                    sys.stderr,
+                ),
+                sys.stderr,
             )
             sys.exit(1)
 
@@ -158,10 +184,14 @@ def run_cli() -> None:
         api_key = resolve_api_key(provider, args.api_key)
         if not api_key:
             env_var = {"claude": "ANTHROPIC_API_KEY", "gemini": "GOOGLE_API_KEY", "openai": "OPENAI_API_KEY"}[provider]
-            print(
-                f"\nError: No API key found for '{provider}'. Provide via --api-key, "
-                f"env var {env_var}, or run --configure-ai.",
-                file=sys.stderr,
+            _emit(
+                paint(
+                    f"\nError: No API key found for '{provider}'. Provide via --api-key, "
+                    f"env var {env_var}, or run --configure-ai.",
+                    "err",
+                    sys.stderr,
+                ),
+                sys.stderr,
             )
             sys.exit(1)
 
@@ -175,14 +205,12 @@ def run_cli() -> None:
                 model = DEFAULT_MODELS.get(provider, "")
 
         label = PROVIDER_LABELS.get(provider, provider)
-        safe_print(f"\nSending to {label} ({model})...")
+        safe_print(paint(f"\nSending to {label} ({model})..."))
 
         try:
             response = send_to_ai(markdown, args.ask, provider, api_key, model)
-            safe_print(f"\n{'=' * 60}")
-            safe_print(f"AI Response ({label}):")
-            safe_print("=" * 60)
+            safe_print(format_ai_header(label))
             safe_print(response)
         except Exception as exc:
-            print(f"\nError from {label}: {exc}", file=sys.stderr)
+            _emit(paint(f"\nError from {label}: {exc}", "err", sys.stderr), sys.stderr)
             sys.exit(1)

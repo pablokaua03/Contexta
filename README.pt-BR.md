@@ -1,58 +1,177 @@
 <div align="center">
 
+<img src="assets/logo.svg" width="88" alt="Contexta">
+
 # Contexta
 
-**Engine de contexto AI-native para codebases. Serve contexto inteligente para Claude Code, Cursor, Windsurf e qualquer ferramenta compatível com MCP — ou gera packs de contexto curados para uso manual.**
+**Packs de contexto curados para debug, review, onboarding e handoff para IA.**
 
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Plataforma](https://img.shields.io/badge/Plataforma-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
-[![Versão](https://img.shields.io/badge/Vers%C3%A3o-2.0.0-purple)]()
-[![MCP](https://img.shields.io/badge/MCP-Compatível-orange)]()
+O Contexta lê um codebase, fica com os arquivos que importam e escreve um pack em Markdown para colar em qualquer assistente — ou servir via MCP para Claude Code, Cursor e Windsurf.
+
+[![Python](https://img.shields.io/badge/python-3.11%2B-12211c?style=flat-square)](https://python.org)
+[![Licença: MIT](https://img.shields.io/badge/licença-MIT-12211c?style=flat-square)](LICENSE)
+[![Plataforma](https://img.shields.io/badge/plataforma-Windows%20%7C%20macOS%20%7C%20Linux-12211c?style=flat-square)]()
+[![Versão](https://img.shields.io/badge/versão-2.0.0-12211c?style=flat-square)]()
+[![MCP](https://img.shields.io/badge/MCP-compatível-12211c?style=flat-square)]()
 
 <br>
 
-[<img src="https://img.shields.io/badge/pip%20install%20contexta--ai-3776AB?style=for-the-badge&logo=pypi&logoColor=white" height="42">](https://pypi.org/project/contexta-ai/)
-&nbsp;&nbsp;
-[<img src="https://img.shields.io/badge/Download%20para%20Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
-&nbsp;&nbsp;
-[<img src="https://img.shields.io/badge/Download%20para%20Linux-E95420?style=for-the-badge&logo=linux&logoColor=white" height="42">](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
-
-> Instale via pip, baixe o executável portátil ou rode direto do código-fonte.
+[Instalar com pip](https://pypi.org/project/contexta-ai/)
+·
+[Build para Windows](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
+·
+[Build para Linux](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
 
 <br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/white.png">
-  <img alt="Preview da interface do Contexta" src="assets/dark.png">
+  <img alt="App do Contexta no tema escuro, com um projeto de exemplo e o preview do pack" src="assets/dark.png" width="960">
 </picture>
+
+<sub>Os temas escuro e claro usam o mesmo layout, a mesma tipografia e o mesmo verde.</sub>
 
 </div>
 
 ---
 
-## O que é o Contexta
+## Antes e depois
 
-O Contexta analisa codebases e serve contexto inteligente e curado para ferramentas de IA. Em vez de despejar arquivos cegamente, ele entende a estrutura do projeto, detecta frameworks, ranqueia arquivos por importância e entrega exatamente o que a IA precisa.
+A janela anterior era um formulário longo: o mesmo texto aparecia três vezes, os botões secundários pareciam desligados e o preview era um bloco de texto. Agora os controles ficam à esquerda e o pack que você vai gerar fica à direita.
 
-**Três formas de usar:**
+| Antes | Depois |
+| --- | --- |
+| <img alt="Janela anterior do Contexta" src="docs/images/before-dark.png" width="460"> | <img alt="Janela atual do Contexta" src="assets/dark.png" width="460"> |
 
-| Modo | Comando | O que faz |
-|---|---|---|
-| **MCP Server** | `contexta serve` | Roda como servidor de ferramentas — Claude Code, Cursor, Windsurf chamam automaticamente |
-| **CLI** | `contexta ./projeto --pack onboarding` | Gera um arquivo Markdown com o context pack |
-| **GUI** | `contexta` | App desktop com controles visuais |
+Tema claro, a mesma estrutura:
+
+| Antes | Depois |
+| --- | --- |
+| <img alt="Tema claro anterior" src="docs/images/before-light.png" width="460"> | <img alt="Tema claro atual" src="assets/white.png" width="460"> |
 
 ---
 
-## MCP Server (recomendado)
+## Instalação
 
-O MCP server é a forma principal de usar o Contexta. Assistentes de IA o chamam como ferramenta para entender seu projeto — sem copiar e colar.
+### pip
 
-### Configuração
+```bash
+pip install contexta-ai
+```
 
-Adicione à configuração MCP do seu editor (Claude Code, Cursor, Windsurf, etc.):
+SDKs opcionais, só se você usar `--ask`:
+
+```bash
+pip install contexta-ai[claude]
+pip install contexta-ai[gemini]
+pip install contexta-ai[openai]
+pip install contexta-ai[all-ai]
+```
+
+### Builds portáteis
+
+- **Windows:** [`contexta.exe`](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe). No Windows 11, clique com o botão direito, abra Propriedades, marque **Desbloquear** e execute.
+- **Linux:** [`contexta-linux.tar.gz`](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
+
+### Do código-fonte
+
+```bash
+git clone https://github.com/pablokaua03/Contexta.git
+cd Contexta
+pip install -r requirements.txt
+python contexta.py
+```
+
+---
+
+## Começar
+
+```bash
+contexta                                  # abre o app
+contexta ./projeto --pack onboarding     # gera um Markdown
+contexta serve                            # servidor MCP
+```
+
+| | Comando | O que você recebe |
+| --- | --- | --- |
+| **GUI** | `contexta` | Escolhe a pasta, o pack, e lê o resultado na janela |
+| **CLI** | `contexta ./projeto --pack onboarding` | Um Markdown na área de trabalho, ou em `-o` |
+| **MCP** | `contexta serve` | Ferramentas que o editor chama sozinho |
+
+---
+
+## O app
+
+A primeira tela pede uma pasta. O pack de onboarding já vem selecionado.
+
+<img alt="Estado inicial: escolha a pasta, o pack e crie" src="assets/empty.png" width="960">
+
+Depois de gerar, a aba Resultado mostra o Markdown com títulos e código separados do texto. O painel Activity registra o scan. Erros aparecem num aviso que dá para dispensar, e o status passa a Error.
+
+<img alt="Aba de resultado com o pack gerado para o projeto sample-app" src="assets/result.png" width="960">
+
+---
+
+## CLI
+
+No terminal interativo a saída tem um cabeçalho curto, uma marca em cada linha e a linha `saved`. Saída redirecionada continua texto puro: sem cor, sem prefixo, com a mesma linha `Saved:` de antes. `NO_COLOR=1` ou `CONTEXTA_COLOR=never` força texto puro. `CONTEXTA_COLOR=always` força cor.
+
+<img alt="Sessão de terminal rodando contexta em sample-app com o pack onboarding" src="assets/cli.png" width="760">
+
+```bash
+contexta ./projeto
+contexta ./projeto --pack onboarding
+contexta ./projeto --pack raw_files
+contexta ./projeto --pack pr_review --diff --copy
+contexta ./projeto --mode debug --focus "fluxo de auth"
+
+contexta ./projeto --ask "quais são os principais riscos?"
+contexta ./projeto --ask "explica a arquitetura" --provider claude
+contexta --configure-ai
+```
+
+### Flags
+
+| Flag | Descrição |
+| --- | --- |
+| `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related`, `raw_files` |
+| `--mode` | `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
+| `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
+| `--ai` | `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
+| `--task` | `general`, `ai_handoff`, `bug_report`, `code_review`, `explain_project`, `risk_analysis`, `refactor_request`, `pr_summary`, `write_tests`, `find_dead_code` |
+| `--focus` | Inclina a seleção para um tema, como `"auth flow"` ou `"database"` |
+| `--diff` / `--staged` | Usa mudanças do git como contexto |
+| `--ask` | Envia o pack e um prompt para uma API de IA |
+| `--provider` | `claude`, `gemini` ou `openai` |
+| `--api-key` | Chave. Também lê `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY` |
+| `--configure-ai` | Salva provider, chave e modelo em `~/.contexta/` |
+| `-c` / `--copy` | Copia o pack para a área de transferência |
+| `-o` / `--output` | Grava neste caminho em vez da área de trabalho |
+
+---
+
+## Packs
+
+| Pack | Serve para |
+| --- | --- |
+| `onboarding` | Primeira leitura de um codebase novo |
+| `pr_review` | Review com a mudança em vista |
+| `risk_review` | Pontos frágeis, cobertura faltando, módulos de alto impacto |
+| `debug` | Caça a bug, com arquivos alterados e suspeitos primeiro |
+| `backend` / `frontend` | Um lado do app |
+| `changes_related` | Mudanças do git e os arquivos ao redor |
+| `raw_files` | Caminho e conteúdo, sem análise |
+| `chatgpt` | Preset geral para ChatGPT |
+| `custom` | Cada controle fica como você deixou |
+
+Conforme o pack, o modo e a tarefa, a saída pode trazer resumo do projeto, um caminho de leitura, o fluxo principal, arquivos centrais, testes relacionados, um mapa de relações, notas de risco e o porquê de cada arquivo ter entrado.
+
+---
+
+## Servidor MCP
+
+No Claude Code, Cursor, Windsurf ou outro cliente MCP:
 
 ```json
 {
@@ -65,7 +184,7 @@ Adicione à configuração MCP do seu editor (Claude Code, Cursor, Windsurf, etc
 }
 ```
 
-Ou rodando do código-fonte:
+A partir do código-fonte:
 
 ```json
 {
@@ -78,156 +197,49 @@ Ou rodando do código-fonte:
 }
 ```
 
-### Ferramentas disponíveis
-
 | Ferramenta | O que faz |
-|---|---|
-| `scan_project` | Fingerprint rápido — tipo, linguagem, frameworks, deps, entry points |
-| `get_architecture` | Relações entre módulos, estrutura de pastas, riscos, padrões |
-| `generate_context` | Context pack completo com todas as opções de preset |
-| `find_files` | Busca arquivos por nome, extensão ou palavra-chave |
-| `read_files` | Lê conteúdo de arquivos específicos |
-| `list_packs` | Lista presets disponíveis |
-| `cache_status` | Mostra estatísticas de cache (hits/misses) |
-| `refresh_cache` | Força atualização do cache |
+| --- | --- |
+| `scan_project` | Impressão digital: tipo, linguagem, frameworks, dependências, entradas |
+| `get_architecture` | Módulos, pastas, riscos, padrões |
+| `generate_context` | Pack completo, com os mesmos presets da CLI |
+| `find_files` | Busca por nome, extensão ou palavra |
+| `read_files` | Lê arquivos específicos |
+| `list_packs` | Lista os presets |
+| `cache_status` | Acertos e faltas do cache |
+| `refresh_cache` | Força o próximo cálculo |
 
-### Cache inteligente
-
-Resultados ficam em memória com invalidação automática. A primeira chamada analisa o projeto (~700ms), as seguintes retornam em ~2ms até que arquivos mudem no disco. O cache monitora mtimes e arquivos de manifesto — quando você edita código, a próxima chamada recomputa automaticamente.
+A primeira chamada analisa o projeto. As seguintes reaproveitam a memória até um arquivo ou manifesto mudar no disco.
 
 ---
 
-## Instalação
+## O que ele faz
 
-### Opção A: pip (recomendado)
+| | |
+| --- | --- |
+| **GUI e CLI** | Os mesmos packs, um visual e um para script |
+| **Servidor MCP** | `contexta serve`, com cache curto da análise |
+| **APIs de IA** | `--ask` manda o pack para Claude, Gemini ou OpenAI |
+| **Impressão digital** | Stack, frameworks, domínio e tipo de projeto |
+| **Sintaxe** | tree-sitter, com fallback heurístico |
+| **Linguagens** | Python, JS/TS, Go, Rust, PHP, Java, C#, Kotlin, Swift, C++ e outras |
+| **Tokens** | Estimativa com tiktoken antes de colar |
+| **Blobs** | Literais base64 e binários são recolhidos em vez de colados |
+
+O Contexta não altera o projeto que escaneia e não envia telemetria. Rede só existe na chamada opcional `--ask`. Chaves salvas com `--configure-ai` ficam em `~/.contexta/ai_config.json`.
+
+---
+
+## Build
 
 ```bash
-pip install contexta-ai
-```
-
-Integrações opcionais com APIs de IA:
-
-```bash
-pip install contexta-ai[claude]    # API do Claude
-pip install contexta-ai[gemini]    # API do Gemini
-pip install contexta-ai[openai]    # API do OpenAI
-pip install contexta-ai[all-ai]    # Todos os três
-```
-
-### Opção B: Executáveis portáteis
-
-- **Windows**: baixe [`contexta.exe`](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta.exe)
-  > **Windows 11:** clique com botão direito no `.exe` baixado → Propriedades → marque **Desbloquear** → OK antes de executar.
-- **Linux**: baixe [`contexta-linux.tar.gz`](https://github.com/pablokaua03/Contexta/releases/latest/download/contexta-linux.tar.gz)
-
-### Opção C: Código-fonte
-
-```bash
-git clone https://github.com/pablokaua03/Contexta.git
-cd Contexta
-pip install -r requirements.txt
-python contexta.py
-```
-
----
-
-## Uso via CLI
-
-```bash
-# Gerar context packs
-contexta ./projeto                                          # pack padrão
-contexta ./projeto --pack onboarding                        # entender um codebase novo
-contexta ./projeto --pack raw_files                         # dump limpo de caminho + conteúdo
-contexta ./projeto --pack pr_review --diff --copy           # revisar mudanças
-contexta ./projeto --mode debug --focus "auth flow"         # debugar uma área específica
-
-# Integração com API de IA — envia contexto + pergunta direto para uma IA
-contexta ./projeto --ask "quais são os principais riscos de segurança?"
-contexta ./projeto --ask "explique a arquitetura" --provider claude
-
-# Configurar chaves de API
-contexta --configure-ai
-```
-
-### Flags do CLI
-
-| Flag | Descrição |
-|---|---|
-| `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `backend`, `frontend`, `changes_related`, `raw_files` |
-| `--mode` | Modo: `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
-| `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
-| `--ai` | Perfil de IA: `generic`, `chatgpt`, `claude`, `gemini`, `copilot` |
-| `--task` | Tarefa: `general`, `ai_handoff`, `bug_report`, `code_review`, `explain_project`, `risk_analysis`, `refactor_request`, `pr_summary`, `write_tests`, `find_dead_code` |
-| `--focus` | Direciona scoring para um tópico (ex: `"auth flow"`, `"database"`) |
-| `--diff` / `--staged` | Usa mudanças do git como contexto |
-| `--ask` | Envia context pack + prompt para uma API de IA |
-| `--provider` | Provedor: `claude`, `gemini`, `openai` |
-| `--api-key` | Chave da API (também lê `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`) |
-| `--configure-ai` | Setup interativo de API de IA |
-| `-c` / `--copy` | Copia saída para o clipboard |
-| `-o` / `--output` | Caminho de saída customizado |
-
----
-
-## Packs de contexto
-
-| Pack | Melhor para |
-|---|---|
-| `onboarding` | Entender um codebase novo rapidamente |
-| `pr_review` | Code review com contexto de mudanças |
-| `risk_review` | Hotspots de regressão, cobertura faltante, módulos de alto impacto |
-| `debug` | Bug hunting com arquivos suspeitos priorizados |
-| `backend` / `frontend` | Foco em um lado da aplicação |
-| `changes_related` | Mudanças do git + arquivos relevantes próximos |
-| `raw_files` | Dump limpo dos arquivos importantes — caminho + conteúdo, sem análise |
-| `chatgpt` | Preset geral para ChatGPT |
-| `custom` | Controle manual total |
-
----
-
-## O que o Contexta exporta
-
-Dependendo do pack, modo e tarefa, a saída pode incluir:
-
-- Resumo do projeto com stack detectada, entry points, propósito e módulos centrais
-- Caminho "leia isso primeiro" pelo repositório
-- Narrativa do fluxo principal de execução
-- Arquivos centrais, de apoio, testes relacionados e contexto de arquivos alterados
-- Mapas de relacionamento e notas de risco
-- Breakdown de scores explicando por que cada arquivo foi selecionado
-- Payload Markdown curado pronto para qualquer ferramenta de IA
-
----
-
-## Principais recursos
-
-| Recurso | Detalhe |
-|---|---|
-| **MCP Server** | `contexta serve` — ferramentas de IA chamam como servidor com cache inteligente |
-| **Integração com API de IA** | `--ask` envia contexto direto para Claude, Gemini ou OpenAI |
-| **Cache inteligente** | Respostas em ~2ms com invalidação automática por mtime |
-| **Raw files pack** | Dump limpo caminho + conteúdo para workflows simples |
-| **GUI + CLI** | App desktop para uso visual, CLI para automação |
-| **Fingerprinting** | Detecta stack, frameworks, domínio e tipo de projeto automaticamente |
-| **Análise syntax-aware** | tree-sitter + fallback heurístico para extração de símbolos |
-| **Multi-linguagem** | Python, JS/TS, Go, Rust, PHP, Java, C#, Kotlin, Swift, C++ e mais |
-| **Estimativa de tokens** | tiktoken para dimensionamento de packs |
-| **Proteção contra blobs** | Colapsa literais base64/binários automaticamente |
-| **Pacote PyPI** | `pip install contexta-ai` com extras opcionais de IA |
-
----
-
-## Build a partir do código
-
-```bash
-# Windows (requer Visual Studio C++ Build Tools)
+# Windows, com as ferramentas de build C++ do Visual Studio
 .\build.bat
 
-# Linux / macOS
+# Linux ou macOS
 chmod +x build.sh && ./build.sh
 ```
 
-Saídas: `dist/contexta.exe` (Windows), `dist/contexta` (Linux/macOS), `dist/contexta-linux.tar.gz` (bundle Linux).
+Saídas: `dist/contexta.exe` no Windows, `dist/contexta` no Linux e macOS, e `dist/contexta-linux.tar.gz` no bundle Linux.
 
 ---
 
@@ -239,23 +251,9 @@ python -m pytest tests/ -k "not test_relation_score"
 
 ---
 
-## Segurança e comportamento
+## Contribuir
 
-- Read-only: o Contexta não modifica o projeto analisado
-- Sem telemetria ou necessidade de rede (exceto `--ask` opcional)
-- Limites de scan evitam exports descontrolados
-- Payloads binários/base64 suprimidos automaticamente
-- Chaves de API ficam em `~/.contexta/ai_config.json` quando usando `--configure-ai`
-
----
-
-## Contribuindo
-
-Veja [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## Changelog
-
-Veja [CHANGELOG.md](CHANGELOG.md)
+Veja [CONTRIBUTING.md](CONTRIBUTING.md). Histórico: [CHANGELOG.md](CHANGELOG.md).
 
 ## Licença
 
