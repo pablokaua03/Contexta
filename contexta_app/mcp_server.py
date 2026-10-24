@@ -16,6 +16,7 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
+from contexta_app import __version__
 from contexta_app.cache import get_analysis, get_cache_stats, invalidate
 from contexta_app.context_engine import (
     PACK_DEFAULTS,
@@ -127,6 +128,7 @@ mcp = FastMCP(
         "itself as files change."
     ),
 )
+mcp._mcp_server.version = __version__  # the server reports Contexta's version, not the MCP library's
 
 
 @mcp.tool()

@@ -1,8 +1,14 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
+set "PYTHON=py"
+set "APP_VERSION="
+rem One version number: contexta_app/__init__.py. This also refreshes packaging\version_info.txt.
+for /f "delims=" %%V in ('%PYTHON% packaging\sync_version.py 2^>nul') do set "APP_VERSION=%%V"
+if not defined APP_VERSION set "APP_VERSION=unknown"
+
 echo.
 echo  =========================================
-echo   Contexta 2.0 - Build Windows Executable
+echo   Contexta !APP_VERSION! - Build Windows Executable
 echo  =========================================
 echo.
 
@@ -12,7 +18,6 @@ set "OUTPUT_EXE=%OUTPUT_DIR%\contexta.exe"
 set "INSTALLER_SCRIPT=packaging\windows\contexta.iss"
 set "INSTALLER_EXE=%OUTPUT_DIR%\contexta-setup.exe"
 set "ICON_PATH=assets\icon.ico"
-set "PYTHON=py"
 set "VCVARS="
 set "ISCC_PATH="
 
@@ -48,7 +53,7 @@ echo.
 echo  Building Windows executable with Nuitka...
 echo.
 
-set "NUITKA_ARGS=--mode=onefile --windows-console-mode=disable --enable-plugins=tk-inter --windows-icon-from-ico=%ICON_PATH% --msvc=latest --assume-yes-for-downloads --output-dir=%BUILD_DIR% --output-filename=contexta.exe contexta.py"
+set "NUITKA_ARGS=--mode=onefile --windows-console-mode=disable --enable-plugins=tk-inter --windows-icon-from-ico=%ICON_PATH% --file-version=%APP_VERSION% --product-version=%APP_VERSION% --include-data-files=assets/icon.ico=assets/icon.ico --include-data-files=assets/logo.png=assets/logo.png --include-data-files=assets/logo@2x.png=assets/logo@2x.png --msvc=latest --assume-yes-for-downloads --output-dir=%BUILD_DIR% --output-filename=contexta.exe contexta.py"
 set "BUILD_CMD=cd /d ""%CD%"" && %PYTHON% -m nuitka %NUITKA_ARGS%"
 
 if defined VCVARS (
@@ -88,7 +93,7 @@ if not exist "%INSTALLER_SCRIPT%" goto :installer_skipped
 if exist "%INSTALLER_EXE%" del /f /q "%INSTALLER_EXE%"
 echo.
 echo  Building Windows installer...
-"%ISCC_PATH%" /Qp "%INSTALLER_SCRIPT%"
+"%ISCC_PATH%" /Qp /DMyAppVersion=%APP_VERSION% "%INSTALLER_SCRIPT%"
 if errorlevel 1 goto :build_error
 
 :installer_skipped

@@ -33,7 +33,7 @@ a = Analysis(
     [str(ROOT / 'contexta.py')],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[(str(ICON_PATH), '.')],
+    datas=[(str(ICON_PATH), '.'), (str(ROOT / 'assets' / 'logo.png'), '.'), (str(ROOT / 'assets' / 'logo@2x.png'), '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
