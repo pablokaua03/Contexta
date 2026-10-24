@@ -55,6 +55,9 @@ def parse_serve_args(args: list[str]) -> list[str]:
     i = 0
     while i < len(args):
         arg = args[i]
+        if arg in ("-h", "--help"):
+            print("Usage: contexta serve [--root DIR]\n\nStart the MCP server over stdio. Tools only read inside --root\n(repeatable), CONTEXTA_ROOT, or the current directory.")
+            raise SystemExit(0)
         if arg == "--root":
             if i + 1 >= len(args):
                 raise SystemExit("contexta serve: --root needs a folder")

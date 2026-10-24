@@ -42,7 +42,7 @@ gui = ["tree-sitter>=0.25,<0.26", "tree-sitter-language-pack>=1.6,<2"]
 everything = ["tree-sitter>=0.25,<0.26", "tree-sitter-language-pack>=1.6,<2", "anthropic>=0.52,<1", "google-genai>=1.14,<2", "openai>=1.82,<2"]
 
 [project.scripts]
-contexta = "contexta:main"
+contexta = "contexta_app.entry:main"
 
 [project.urls]
 Homepage = "https://github.com/pablokaua03/contexta"
@@ -50,4 +50,3 @@ Repository = "https://github.com/pablokaua03/contexta"
 
 [tool.hatch.build.targets.wheel]
 packages = ["contexta_app"]
-include = ["contexta.py", "contexta_mcp.py"]
