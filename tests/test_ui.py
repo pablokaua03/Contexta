@@ -10,11 +10,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import importlib.util
-
-if importlib.util.find_spec("tkinter") is None:
-    raise unittest.SkipTest("tkinter is not installed")
-
 from contexta_app.ui import (
     SCROLL_TARGET_ATTR,
     _window_icon_source,
