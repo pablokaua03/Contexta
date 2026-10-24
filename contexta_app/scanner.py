@@ -98,6 +98,7 @@ CODE_EXTENSIONS: dict[str, str] = {
 
 IGNORE_DIRS: set[str] = {
     ".git",
+    ".contexta",
     ".svn",
     ".hg",
     ".bzr",

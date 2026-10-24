@@ -6,7 +6,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from tree_sitter_language_pack import get_parser
+try:  # optional: pip install "contexta-ai[syntax]"
+    from tree_sitter_language_pack import get_parser
+except ImportError:  # the regex scanner in symbols.py takes over
+    get_parser = None
 
 
 TREE_SITTER_LANGUAGE_KEYS = {
@@ -21,7 +24,25 @@ TREE_SITTER_LANGUAGE_KEYS = {
 
 @lru_cache(maxsize=8)
 def _get_parser(language_key: str):
+    if get_parser is None:
+        raise RuntimeError("tree-sitter is not installed")
     return get_parser(language_key)
+
+
+def available() -> bool:
+    return get_parser is not None
+
+
+def parse_tree(content: str, lang: str | None):
+    """``(root_node, source_bytes, language_key)`` or ``None`` without tree-sitter or for unsupported languages."""
+    language_key = TREE_SITTER_LANGUAGE_KEYS.get(lang or "")
+    if not language_key or get_parser is None:
+        return None
+    try:
+        source = content.encode("utf-8", errors="ignore")
+        return _get_parser(language_key).parse(source).root_node, source, language_key
+    except Exception:
+        return None
 
 
 def _decode(node, source: bytes) -> str:
