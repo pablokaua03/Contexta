@@ -14,6 +14,7 @@ from pathlib import Path
 
 from rapidfuzz.fuzz import ratio
 
+from contexta_app.project_meta import read_project_description
 from contexta_app.scanner import get_language, read_file_safe
 from contexta_app.syntax import extract_symbols_with_treesitter
 
@@ -1199,7 +1200,7 @@ def summarize_support_file(item: FileInsight) -> str | None:
     if name == "requirements.txt":
         content_lower = item.content.lower()
         _contexta_deps = {"pathspec", "tiktoken", "rapidfuzz", "charset-normalizer", "chardet"}
-        if any(dep in content_lower for dep in _contexta_deps):
+        if len(item.relpath.parts) == 1 and "tiktoken" in content_lower and "pathspec" in content_lower:
             return "Declares runtime dependencies for parsing, token estimation, and repository analysis."
         return "Declares runtime dependencies and version constraints for the project."
     if name == "requirements-build.txt":
@@ -1219,20 +1220,12 @@ def summarize_support_file(item: FileInsight) -> str | None:
         return "Automates Unix-like build, packaging, or deployment steps for the project."
     if name.endswith(".spec") and "pyinstaller" in item.content.lower():
         return "Defines the PyInstaller build spec used to package the desktop application."
-    if name == "syntax.py":
-        return "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers."
-    if name == "contexta.py":
-        return "Acts as the main entrypoint that routes execution into the GUI or CLI flow."
-    if name == "mdcodebrief.py":
-        return "Legacy compatibility shim that forwards execution to contexta.main()."
+    if is_contexta_self_file(item):
+        role = (_CONTEXTA_MODULE_ROLES if item.relpath.parts[0] == "contexta_app" else _CONTEXTA_ROOT_ROLES).get(name)
+        if role:
+            return role
     if name == "cli.py":
-        return "Parses CLI flags, invokes pack generation, and handles file output or clipboard copy."
-    if name == "ui.py":
-        return "Implements the desktop interface, preview controls, and export workflow orchestration."
-    if name == "theme.py":
-        return "Defines theme palettes and repaint helpers for dark/light interface rendering."
-    if name == "utils.py":
-        return "Provides small desktop-path and filename helpers used by the app entry points."
+        return "Defines the command-line interface and its commands."
     if rel.startswith("tests/") and name.startswith("test_"):
         target = item.path.stem.removeprefix("test_").replace("_", " ")
         return f"Exercises {target} behavior with focused automated checks."
@@ -1438,19 +1431,50 @@ def collect_file_signals(item: FileInsight) -> FileSignals:
     return signals
 
 
+_CONTEXTA_ROOT_FILES = frozenset({
+    "contexta.py", "mdcodebrief.py", "contexta.iss", "install-contexta.sh", "version_info.txt",
+})
+_CONTEXTA_MODULE_ROLES = {
+    "context_engine.py": "Implements project analysis, scoring, and smart context selection.",
+    "renderer.py": "Formats selected analysis into the final context pack output.",
+    "scanner.py": "Scans the project tree, applies filters, and reads safe text content.",
+    "syntax.py": "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers.",
+    "ui.py": "Implements the desktop GUI and export workflow orchestration.",
+    "cli.py": "Implements the command-line workflow for pack generation and output.",
+    "theme.py": "Defines GUI theme palettes and widget repaint behavior.",
+    "utils.py": "Provides small desktop-path and filename helpers used by the app entry points.",
+}
+_CONTEXTA_ROOT_ROLES = {
+    "contexta.py": "Acts as the main entrypoint that routes execution into the GUI or CLI flow.",
+    "mdcodebrief.py": "Legacy compatibility shim that forwards execution to contexta.main().",
+    "contexta.iss": "Defines the Inno Setup installer script for Windows distribution.",
+    "install-contexta.sh": "Installs the packaged binary into a user-local application path.",
+    "version_info.txt": "Defines Windows version metadata used in packaged executable builds.",
+}
+
+
+def is_contexta_self_file(item: FileInsight) -> bool:
+    """True only for Contexta's own sources.
+
+    Role text that names Contexta's internals must never be applied to another
+    project that happens to have a ``cli.py`` or ``ui.py``.
+    """
+    parts = item.relpath.parts
+    if not parts:
+        return False
+    if parts[0] == "contexta_app":
+        return True
+    return len(parts) == 1 and item.path.name.lower() in _CONTEXTA_ROOT_FILES
+
+
 def infer_exact_name_role(item: FileInsight) -> str | None:
     name = item.path.name.lower()
+    if is_contexta_self_file(item):
+        role = _CONTEXTA_MODULE_ROLES.get(name) if item.relpath.parts[0] == "contexta_app" else _CONTEXTA_ROOT_ROLES.get(name)
+        if role:
+            return role
     exact_name_roles = {
-        "context_engine.py": "Implements project analysis, scoring, and smart context selection.",
-        "renderer.py": "Formats selected analysis into the final context pack output.",
-        "scanner.py": "Scans the project tree, applies filters, and reads safe text content.",
-        "syntax.py": "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers.",
-        "ui.py": "Implements the desktop GUI and export workflow orchestration.",
-        "cli.py": "Implements the command-line workflow for pack generation and output.",
-        "theme.py": "Defines GUI theme palettes and widget repaint behavior.",
-        "contexta.py": "Acts as the main entrypoint that routes execution into the GUI or CLI flow.",
-        "mdcodebrief.py": "Legacy compatibility shim that forwards execution to contexta.main().",
-        "utils.py": "Provides small desktop-path and filename helpers used by the app entry points.",
+        "cli.py": "Defines the command-line interface and its commands.",
         "package.json": "Declares project dependencies and package metadata.",
         "composer.json": "Declares project dependencies and package metadata.",
         "gemfile": "Declares Ruby dependencies and Bundler-managed package metadata.",
@@ -1466,11 +1490,7 @@ def infer_exact_name_role(item: FileInsight) -> str | None:
         "appsettings.json": "Defines ASP.NET Core environment and application settings.",
         "tsconfig.json": "Defines TypeScript compiler options and project path aliases.",
         # requirements.txt, build.bat, build.sh are resolved below with content-aware logic
-        "requirements-build.txt": "Declares build-time tooling for packaging the project on Windows and Unix-like systems.",
-        "contexta.iss": "Defines the Inno Setup installer script for Windows distribution.",
-        "install-contexta.sh": "Installs the packaged binary into a user-local application path.",
-        "version_info.txt": "Defines Windows version metadata used in packaged executable builds.",
-        "syntax.py": "Extracts syntax-aware symbols and imports through tree-sitter-backed parsing helpers.",
+        "requirements-build.txt": "Declares build-time tooling for packaging the project.",
     }
     if name in exact_name_roles:
         return exact_name_roles[name]
@@ -1478,7 +1498,7 @@ def infer_exact_name_role(item: FileInsight) -> str | None:
     if name == "requirements.txt":
         content_lower = item.content.lower()
         _contexta_deps = {"pathspec", "tiktoken", "rapidfuzz", "charset-normalizer", "chardet"}
-        if any(dep in content_lower for dep in _contexta_deps):
+        if len(item.relpath.parts) == 1 and "tiktoken" in content_lower and "pathspec" in content_lower:
             return "Declares runtime dependencies for parsing, token estimation, and repository analysis."
         return "Declares runtime dependencies and version constraints for the project."
     if name == "build.bat":
@@ -1636,7 +1656,7 @@ def infer_file_role_with_project_context(item: FileInsight, project_type: str | 
     name = item.path.name.lower()
     rel = item.relpath.as_posix().lower()
 
-    if project_type == "Desktop GUI + CLI developer tool":
+    if project_type == "Desktop GUI + CLI developer tool" and is_contexta_self_file(item):
         desktop_exact_roles = {
             "context_engine.py": "Implements project analysis, scoring, and smart context selection.",
             "renderer.py": "Formats selected analysis into the final context pack output.",
@@ -1811,7 +1831,7 @@ def validate_role_against_project(item: FileInsight, role: str, project_type: st
     rel = item.relpath.as_posix().lower()
     lowered = role.lower()
 
-    if project_type == "Desktop GUI + CLI developer tool":
+    if project_type == "Desktop GUI + CLI developer tool" and is_contexta_self_file(item):
         locale_like = "locale state and translation hooks" in lowered
         locale_whitelist = {"localecontext.tsx", "translations.ts", "locale.py", "locale_context.py"}
         if locale_like and name not in locale_whitelist:
@@ -2051,7 +2071,7 @@ def summarize_file(item: FileInsight, reverse_index: dict[str, set[str]], projec
     if support_summary:
         return support_summary
     if "embedded_asset" in item.tags:
-        return "Stores embedded brand or binary-like asset payloads for the packaged GUI."
+        return "Stores embedded binary-like asset payloads."
     if "test" in item.tags and "init" in item.tags:
         return "Marks the tests package for discovery and shared imports."
     if "init" in item.tags:
@@ -2064,17 +2084,9 @@ def summarize_file(item: FileInsight, reverse_index: dict[str, set[str]], projec
             return f"Contains automated tests for {target} behavior."
         return "Contains supporting test helpers, fixtures, or test-only package setup."
     if "ui" in item.tags:
-        return "Drives the desktop interface, user interactions, and presentation logic."
+        return "Contains user-interface code."
     if "cli" in item.tags:
-        return "Handles command-line arguments, execution flow, and output writing."
-    if item.path.stem == "context_engine" or "analysis" in item.tags:
-        return "Scores files, infers relationships, and chooses which context to export."
-    if item.path.stem == "renderer" or "renderer" in item.tags:
-        return "Formats the selected analysis into Markdown sections and token guidance."
-    if "scanner" in item.tags:
-        return "Scans the project tree, applies ignore rules, and reads safe text content."
-    if "theme" in item.tags:
-        return "Defines theme palettes and repaint helpers for dark/light interface rendering."
+        return "Handles command-line arguments and execution flow."
     if "config" in item.tags:
         return "Holds configuration, metadata, or runtime settings used by other modules."
     if "utility" in item.tags:
@@ -3298,7 +3310,7 @@ def detect_project_fingerprint(
                 note(signal_evidence_text(signal), "project_type")
 
     stems = {item.path.stem.lower() for item in scope}
-    if "python" in language_scores and {"scanner", "renderer", "ui", "cli"} <= stems:
+    if "python" in language_scores and {"scanner", "renderer", "ui", "cli"} <= stems and ("contexta_app" in lower_dirs or "contexta.py" in by_name):
         project_type = "Desktop GUI + CLI developer tool"
         probable_purpose = "Scan local repositories and generate curated context packs for AI workflows."
         note("Core files like `scanner.py`, `renderer.py`, `ui.py`, and `cli.py` were all detected together.", "project_type")
@@ -3438,6 +3450,11 @@ def detect_project_fingerprint(
     confidence = min(0.98, confidence + min(domain_score * 0.01, 0.05))
     if entrypoints:
         confidence = min(0.98, confidence + 0.05)
+
+    declared_purpose = read_project_description(project_path)
+    if declared_purpose:
+        probable_purpose = declared_purpose
+        note("Purpose taken from the project's own metadata or README.", "purpose")
 
     return ProjectFingerprint(
         primary_language=primary_language,

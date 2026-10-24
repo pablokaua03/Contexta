@@ -658,7 +658,7 @@ def build_main_flow(analysis) -> list[str]:
     if ui_item:
         flow.append(f"`{ui_item.relpath.as_posix()}` drives the GUI workflow and gathers the export settings from the desktop interface.")
     if cli_item:
-        flow.append(f"`{cli_item.relpath.as_posix()}` handles the CLI workflow, arguments, and output destinations.")
+        flow.append(f"`{cli_item.relpath.as_posix()}` is the command-line entry point.")
     if renderer_item and engine_item:
         flow.append(f"`{renderer_item.relpath.as_posix()}` assembles the pack, calls `build_analysis()`, and later formats the final Markdown output.")
         flow.append(f"`{engine_item.relpath.as_posix()}` classifies files, scores relevance, infers relationships, and chooses which context to export.")

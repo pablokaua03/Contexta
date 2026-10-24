@@ -128,7 +128,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_renderer_summary_wins_over_analysis_overlap(self):
         item = self._insight(
-            "renderer.py",
+            "contexta_app/renderer.py",
             "\n".join([
                 "from context_engine import build_analysis",
                 "",
@@ -142,7 +142,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_context_engine_keeps_analysis_summary(self):
         item = self._insight(
-            "context_engine.py",
+            "contexta_app/context_engine.py",
             "\n".join([
                 "class ProjectAnalysis:",
                 "    pass",
@@ -160,7 +160,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_theme_summary_wins_over_generic_ui_summary(self):
         item = self._insight(
-            "theme.py",
+            "contexta_app/theme.py",
             "\n".join([
                 "import tkinter as tk",
                 "",
@@ -198,7 +198,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
         self.assertEqual(summary, "Acts as the main entrypoint that routes execution into the GUI or CLI flow.")
 
     def test_syntax_summary_mentions_tree_sitter_role(self):
-        item = self._insight("syntax.py", "from tree_sitter_language_pack import get_parser\n")
+        item = self._insight("contexta_app/syntax.py", "from tree_sitter_language_pack import get_parser\n")
         summary = summarize_file(item, {})
         self.assertIn("syntax-aware symbols", summary.lower())
         self.assertIn("tree-sitter", summary.lower())
@@ -817,7 +817,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_context_engine_role_stays_analysis_engine(self):
         item = self._insight(
-            "context_engine.py",
+            "contexta_app/context_engine.py",
             "\n".join([
                 "from scanner import get_language",
                 "",
@@ -1191,7 +1191,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_compute_risk_score_does_not_mark_context_engine_as_input_flow(self):
         item = self._insight(
-            "context_engine.py",
+            "contexta_app/context_engine.py",
             "def build_analysis():\n    return None\n\ndef build_task_prompt():\n    return 'submit the pack summary'\n",
         )
         risk = compute_risk_score(item, [item], set(), {})
@@ -1438,7 +1438,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_normal_source_excerpt_keeps_dense_import_lines(self):
         item = self._insight(
-            "renderer.py",
+            "contexta_app/renderer.py",
             "from context_engine import APP_NAME, AI_PROFILE_OPTIONS, COMPRESSION_OPTIONS, CONTEXT_MODE_OPTIONS, PACK_OPTIONS, TASK_PROFILE_OPTIONS, ExportConfig, build_analysis, extract_relevant_excerpt, extract_signatures\n",
         )
         excerpt, reason = extract_relevant_excerpt(item, "")
