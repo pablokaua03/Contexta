@@ -18,6 +18,14 @@ import pytest
 from contexta_app import mcp_server
 from contexta_app.cli import build_parser, build_plan
 from contexta_app.redaction import find_secrets, redact_secrets
+
+
+def _symlink(link, target, **kwargs):
+    """Create a symlink, or skip the test where the OS forbids it (Windows without developer mode)."""
+    try:
+        link.symlink_to(target, **kwargs)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available on this system")
 from contexta_app.safety import is_sensitive_name, is_sensitive_path
 
 ALNUM = string.ascii_letters + string.digits
@@ -235,7 +243,7 @@ class TestMcpConfinement:
         (project / "ok.py").write_text("x = 1\n")
         (project / ".env").write_text("TOKEN=" + rnd(30) + "\n")
         secret = tmp_path / "outside.txt"; secret.write_text("OUTSIDE-DATA")
-        (project / "link.txt").symlink_to(secret)
+        _symlink(project / "link.txt", secret)
         mcp_server.configure_roots([project])
 
         out = mcp_server.read_files(str(project), ["ok.py", "../outside.txt", str(secret), "link.txt", ".env"])
@@ -268,8 +276,8 @@ class TestScannerSymlinks:
         (outside / "leak.py").write_text("LEAK = 1\n")
         project = tmp_path / "proj"; project.mkdir()
         (project / "main.py").write_text("x = 1\n")
-        (project / "escape").symlink_to(outside, target_is_directory=True)
-        (project / "leak_link.py").symlink_to(outside / "leak.py")
+        _symlink(project / "escape", outside, target_is_directory=True)
+        _symlink(project / "leak_link.py", outside / "leak.py")
         result = run_cli(str(project), "--stdout")
         assert "LEAK = 1" not in result.stdout
         assert "leak.py" not in result.stdout
