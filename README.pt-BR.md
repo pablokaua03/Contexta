@@ -11,7 +11,7 @@ O Contexta lê o código, fica com os arquivos que importam para a tarefa, encai
 [![Python](https://img.shields.io/badge/python-3.11%2B-12211c?style=flat-square)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-12211c?style=flat-square)](LICENSE)
 [![Plataforma](https://img.shields.io/badge/plataforma-Windows%20%7C%20macOS%20%7C%20Linux-12211c?style=flat-square)]()
-[![Versão](https://img.shields.io/badge/vers%C3%A3o-2.2.0-12211c?style=flat-square)]()
+[![Versão](https://img.shields.io/badge/vers%C3%A3o-2.2.1-12211c?style=flat-square)]()
 [![MCP](https://img.shields.io/badge/MCP-compat%C3%ADvel-12211c?style=flat-square)]()
 
 <br>
@@ -366,7 +366,7 @@ python -m pytest tests/ -k "not test_relation_score"
 ## Segurança e comportamento
 
 - Somente leitura, com uma exceção: o Contexta nunca modifica seus arquivos. Ele guarda o grafo do projeto em `.contexta/` (nomes, assinaturas e relações, nunca o conteúdo dos arquivos; ele se ignora com um `.gitignore` com `*`). Desligue com `--no-graph` ou `graph = false`, mude o local com `CONTEXTA_GRAPH_DIR`
-- Sem telemetria ou necessidade de rede (exceto `--ask` opcional)
+- Sem telemetria. Packs, grafo e servidor MCP funcionam offline. Único uso de rede: a primeira contagem de tokens baixa a codificação `cl100k_base` uma vez (guardada em cache pelo `tiktoken`; sem rede, o Contexta usa uma estimativa por caracteres), as chamadas opcionais de `--ask` vão para o provedor de IA que você configurou, e a GitHub Action publica o comentário do PR na API do GitHub
 - Limite de 2000 arquivos por padrão, ajustável com `--max-files`
 - Payloads binários/base64 suprimidos automaticamente
 - Segredos prováveis são redatados nos exports e no `read_files` do MCP, a menos que `--no-redact` seja usado. `--dry-run` mostra o que seria redatado

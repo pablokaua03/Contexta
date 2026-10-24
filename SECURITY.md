@@ -21,10 +21,11 @@ You can expect a response within 7 days.
 
 ## Security notes
 
-- `Contexta` is a read-only tool; it does not modify, delete, or upload project files
-- It makes no network requests of any kind
+- `Contexta` never modifies, deletes, or uploads your project files. It does write its own project graph to `.contexta/` (or `CONTEXTA_GRAPH_DIR`) unless `--no-graph` is set, and `contexta install` writes agent rules and MCP config files you ask for
+- It sends no telemetry. Packs, the project graph and the MCP server do not need the network
+- The network is used in three cases only: the first token count downloads the `cl100k_base` encoding once through `tiktoken` (cached afterwards; offline, Contexta falls back to a character-based estimate), the optional `--ask` feature sends the pack to the AI provider you configured, and the GitHub Action posts its pull request comment to the GitHub API
 - It uses local runtime dependencies for parsing, token estimation, and repository analysis
 - On some Linux distributions, `tkinter` may come from a system package such as `python3-tk`
 - Windows builds use `Nuitka`; Linux packaging uses `PyInstaller`
-- All processing happens locally on your machine
+- Analysis happens locally on your machine
 - Exports replace likely secrets (API keys, private keys, tokens, connection-string passwords) with `[REDACTED]` before the pack is written. This is best-effort and does not make it safe to commit real credentials
