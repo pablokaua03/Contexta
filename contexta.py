@@ -39,7 +39,18 @@ def main() -> None:
 
         run_cli()
     else:
-        from contexta_app.ui import App
+        try:
+            from contexta_app.ui import App
+        except ImportError as exc:
+            if "tkinter" not in str(exc) and "_tkinter" not in str(exc):
+                raise
+            sys.stderr.write(
+                "The desktop GUI needs Tk, and this Python was built without it.\n"
+                "  Debian/Ubuntu: sudo apt install python3-tk     Fedora: sudo dnf install python3-tkinter\n"
+                "  macOS (Homebrew): brew install python-tk\n"
+                "Everything else works without it: contexta --help, contexta <project>, contexta graph, contexta serve.\n"
+            )
+            raise SystemExit(1)
 
         app = App()
         app.mainloop()

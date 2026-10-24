@@ -109,3 +109,38 @@ def test_scan_cap_reaches_source_before_docs(tmp_path):
     names = [d["name"] for d in tree["dirs"]]
     assert "zlib" in names
     assert names == sorted(names, key=str.lower)
+
+
+def test_pyproject_keeps_tree_sitter_optional():
+    import tomllib
+
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    core = " ".join(data["dependencies"])
+    assert "tree-sitter" not in core
+    extras = data["optional-dependencies"]
+    assert any("tree-sitter" in dep for dep in extras["syntax"])
+    assert "gui" in extras
+
+
+def test_everything_works_with_tree_sitter_blocked(tmp_path):
+    write(tmp_path, "web/app.js", "export function render(){ return helper(); }\nfunction helper(){ return 1 }\n")
+    write(tmp_path, "web/use.js", "import { render } from './app.js';\nrender();\n")
+    script = (
+        "import sys; sys.modules['tree_sitter_language_pack']=None; sys.modules['tree_sitter']=None\n"
+        "from contexta_app import syntax; assert not syntax.available()\n"
+        "from contexta_app.graph_cli import run_graph\n"
+        f"raise SystemExit(run_graph(['symbols', 'render', '-C', {str(tmp_path)!r}, '--no-git']))\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert "render" in result.stdout
+
+
+def test_gui_without_tk_prints_a_hint(tmp_path):
+    script = (
+        "import sys; sys.modules['tkinter']=None; sys.argv=['contexta']\n"
+        "import contexta; contexta.main()\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1
+    assert "needs Tk" in result.stderr and "python3-tk" in result.stderr
