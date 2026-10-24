@@ -159,34 +159,6 @@ def infer_component_role(item: FileInsight) -> str | None:
         return "Defines a reusable UI component used across frontend screens."
     return None
 
-def infer_file_role(item: FileInsight) -> str | None:
-    name = item.path.name.lower()
-    rel = item.relpath.as_posix().lower()
-    content_lower = item.content.lower()
-
-    if name in {"package.json", "composer.json", "pyproject.toml", "cargo.toml", "go.mod", "pom.xml"} or name.endswith(".csproj"):
-        return "Declares project dependencies and package metadata."
-    if name.startswith("next.config.") or name.startswith("vite.config.") or name == "tsconfig.json":
-        return "Defines framework build and runtime configuration."
-    component_role = infer_component_role(item)
-    if component_role:
-        return component_role
-    if name.endswith(".css") or name.endswith(".scss") or name.endswith(".sass") or name.endswith(".less"):
-        return "Defines the visual styling for the user interface."
-    if "service" in name or "/services/" in rel:
-        return "Implements service-layer logic that coordinates domain operations."
-    if "dao" in name or "repository" in name or "/repositories/" in rel or "/dao/" in rel:
-        return "Handles persistence and data access operations."
-    page_role = infer_page_role(item)
-    if page_role:
-        return page_role
-    if "form" in name or ("<form" in content_lower and item.lang in {"html", "php", "jsx", "tsx"}):
-        return "Implements the create/edit form flow for a domain entity."
-    if "/components/" in rel and item.lang in {"tsx", "jsx", "vue", "svelte"}:
-        return "Defines a reusable UI component used across frontend screens."
-    if "/pages/" in rel or "/views/" in rel:
-        return "Implements a user-facing page or routed screen in the application."
-    return None
 
 _CONTEXTA_ROOT_FILES = frozenset({
     "contexta.py", "mdcodebrief.py", "contexta.iss", "install-contexta.sh", "version_info.txt",
