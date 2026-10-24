@@ -4,6 +4,10 @@ theme.py — Color palettes, theme switching, and widget registry.
 The palette is an ink surface with a single mint accent. Text colors are
 chosen so body copy and captions stay above a 4.5:1 contrast ratio on the
 surfaces they sit on. Bright fills use dark ink for their label.
+
+``border`` is the quiet outline of a card. ``border_strong`` is for anything the
+user interacts with (inputs, ghost buttons, switch tracks): at least 3:1 against
+the card, as WCAG 1.4.11 asks for UI components.
 """
 
 import tkinter as tk
@@ -20,6 +24,7 @@ DARK: dict[str, str] = {
     "input":       "#0f1613",
     "border":      "#2c433b",
     "border2":     "#3e5c50",
+    "border_strong": "#4f7a6a",
     "accent":      "#3dcc8e",
     "accent_dk":   "#1f8f62",
     "green":       "#3dcc8e",
@@ -49,6 +54,7 @@ LIGHT: dict[str, str] = {
     "input":       "#ffffff",
     "border":      "#d5e2db",
     "border2":     "#b7c9c0",
+    "border_strong": "#728a7d",
     "accent":      "#0d7a4e",
     "accent_dk":   "#0b6842",
     "green":       "#0d7a4e",
