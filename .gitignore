@@ -15,3 +15,9 @@ Thumbs.db
 resume - *.md
 tests/.tmp/
 nuitka-crash-report.xml
+
+# Contexta project graph (self-ignored too) and benchmark scratch
+.contexta/
+benchmarks/.tools/
+benchmarks/.repos/
+benchmarks/.work/

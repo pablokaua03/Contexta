@@ -10,7 +10,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 from contexta_app.context_engine import (
     AI_PROFILE_OPTIONS,
@@ -24,7 +24,7 @@ from contexta_app.context_engine import (
 )
 from contexta_app.renderer import __version__, generate_markdown, section_titles_for_preview
 from contexta_app.scanner import build_tree, count_files, get_git_changed_files, load_gitignore_patterns
-from contexta_app.theme import C, FB, FBS, FH, FL, FM, FS, FT, ThemeRegistry, darken, reg, toggle_theme
+from contexta_app.theme import C, FB, FBS, FH, FL, FM, FS, FT, ThemeRegistry, contrast_ratio, darken, readable_fg, reg, toggle_theme
 from contexta_app.utils import get_desktop, safe_project_name
 
 try:
@@ -38,11 +38,13 @@ PACK_HELP = {
     "chatgpt": "Good general-purpose preset for everyday ChatGPT-assisted work.",
     "onboarding": "Best first stop to understand a new codebase fast.",
     "debug": "Pushes changed and suspicious files to the top for bug hunting.",
+    "bugfix": "Daily bug-fix pack for a coding agent: failing area, nearby code, and related tests.",
     "pr_review": "Shapes the pack around code review, risk spotting, and recent changes.",
     "risk_review": "Highlights likely weak spots, regression surfaces, missing test coverage, and shared modules with broader impact.",
     "frontend": "Biases the selection toward interface flows, views, widgets, and user-facing assets.",
     "backend": "Biases the selection toward non-UI application logic, data flow, and integration-heavy modules.",
     "changes_related": "Starts from recent changes and expands outward to the most relevant nearby files.",
+    "refactor": "Collects the modules to change and the files connected to them.",
     "raw_files": "Dumps the most important files with path + full content. Clean and simple — ideal for pasting into any AI.",
 }
 
@@ -334,7 +336,7 @@ def _apply_window_icon(window: tk.Misc, icon_photo: tk.PhotoImage | None) -> Non
 
 
 class BrandMark(tk.Canvas):
-    SIZE = 46
+    SIZE = 40
 
     def __init__(self, parent):
         super().__init__(parent, width=self.SIZE, height=self.SIZE, highlightthickness=0, bd=0, bg=C["card"])
@@ -344,51 +346,76 @@ class BrandMark(tk.Canvas):
     def _draw(self):
         self.delete("all")
         self.configure(bg=C["card"])
-        self.create_oval(4, 4, self.SIZE - 4, self.SIZE - 4, fill=C["tag_bg"], outline=C["tag_bg"])
-        self.create_arc(11, 11, self.SIZE - 11, self.SIZE - 11, start=40, extent=280, style="arc", outline=C["accent"], width=3)
-        self.create_line(26, 12, 20, 23, 29, 23, 18, 35, fill=C["accent"], width=3, capstyle="round", joinstyle="round")
+        self.create_oval(1, 1, self.SIZE - 1, self.SIZE - 1, fill=C["tag_bg"], outline=C["tag_bg"])
+        self.create_rectangle(13, 11, 28, 30, outline=C["accent"], width=2)
+        self.create_line(16, 17, 25, 17, fill=C["accent"], width=1.6, capstyle="round")
+        self.create_line(16, 21, 23, 21, fill=C["accent"], width=1.6, capstyle="round")
+        self.create_line(16, 25, 24, 25, fill=C["accent"], width=1.6, capstyle="round")
 
 
 class FlatBtn(tk.Frame):
-    def __init__(self, parent, text: str, color_key: str, command, font=None, padx: int = 18, pady: int = 9, surface_key: str = "bg"):
-        super().__init__(parent, bg=C[surface_key])
+    def __init__(self, parent, text: str, color_key: str, command, font=None, padx: int = 16, pady: int = 8, surface_key: str = "bg", variant: str = "solid"):
+        super().__init__(parent, bg=C[surface_key], highlightthickness=0, bd=0)
         self._color_key = color_key
         self._surface_key = surface_key
+        self._variant = variant
         self._enabled = True
+        self._hover = False
         self._btn = tk.Button(
             self,
             text=text,
             font=font or FB,
-            bg=C[color_key],
-            fg=C["white"],
-            activebackground=darken(C[color_key]),
-            activeforeground=C["white"],
             relief="flat",
             bd=0,
             padx=padx,
             pady=pady,
             cursor="hand2",
             command=command,
+            takefocus=1,
         )
         self._btn.pack(fill="both", expand=True)
         self._btn.bind("<Enter>", self._hover_on)
         self._btn.bind("<Leave>", self._hover_off)
         reg(self, lambda w: w._repaint())
+        self._repaint()
+
+    def _palette(self):
+        if not self._enabled:
+            return C["card2"], C["text3"], C["border"]
+        if self._variant == "ghost":
+            bg = C["card2"] if self._hover else C[self._surface_key]
+            return bg, C["text"], C["border"]
+        if self._variant == "soft":
+            bg = C["accent"] if self._hover else C["tag_bg"]
+            fg = readable_fg(bg) if self._hover else C["tag_fg"]
+            return bg, fg, C["tag_bg"]
+        bg = darken(C[self._color_key], 14) if self._hover else C[self._color_key]
+        return bg, readable_fg(bg), bg
 
     def _repaint(self):
-        super().configure(bg=C[self._surface_key])
-        if self._enabled:
-            self._btn.configure(bg=C[self._color_key], fg=C["white"], activebackground=darken(C[self._color_key]), cursor="hand2")
-        else:
-            self._btn.configure(bg=C["border"], fg=C["text3"], cursor="arrow")
+        bg, fg, border = self._palette()
+        super().configure(bg=C[self._surface_key], highlightthickness=1 if self._variant == "ghost" else 0, highlightbackground=border)
+        self._btn.configure(
+            bg=bg,
+            fg=fg,
+            activebackground=bg,
+            activeforeground=fg,
+            highlightthickness=1,
+            highlightbackground=bg,
+            highlightcolor=C["accent"],
+            disabledforeground=C["text3"],
+            cursor="hand2" if self._enabled else "arrow",
+        )
 
     def _hover_on(self, _=None):
+        self._hover = True
         if self._enabled:
-            self._btn.configure(bg=darken(C[self._color_key]))
+            self._repaint()
 
     def _hover_off(self, _=None):
+        self._hover = False
         if self._enabled:
-            self._btn.configure(bg=C[self._color_key])
+            self._repaint()
 
     def configure(self, **kw):
         if "state" in kw:
@@ -403,7 +430,7 @@ class FlatBtn(tk.Frame):
 
 class Card(tk.Frame):
     def __init__(self, parent, pad: int = 16):
-        super().__init__(parent, bg=C["card"], highlightthickness=1, highlightbackground=C["border"])
+        super().__init__(parent, bg=C["card"], highlightthickness=1, highlightbackground=C["border"], bd=0)
         self._pad = pad
         reg(self, lambda w: w.configure(bg=C["card"], highlightbackground=C["border"]))
 
@@ -441,32 +468,63 @@ class ScrollArea(tk.Frame):
 
     def _on_content_configure(self, _event=None):
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+        self._sync_scrollbar()
+
+    def _sync_scrollbar(self):
+        bbox = self._canvas.bbox("all")
+        if not bbox:
+            return
+        content_height = bbox[3] - bbox[1]
+        needs_scroll = content_height > self._canvas.winfo_height() + 2
+        mapped = bool(self._scrollbar.winfo_ismapped())
+        if needs_scroll and not mapped:
+            self._scrollbar.pack(side="right", fill="y")
+        elif mapped and not needs_scroll:
+            self._scrollbar.pack_forget()
 
     def _on_canvas_configure(self, event):
         self._canvas.itemconfigure(self._window, width=event.width)
+        self._sync_scrollbar()
 
 
 class Toggle(tk.Frame):
-    WIDTH = 38
-    HEIGHT = 22
+    WIDTH = 40
+    HEIGHT = 24
 
     def __init__(self, parent, text: str, variable: tk.BooleanVar):
         super().__init__(parent, bg=C["card"])
         self._var = variable
         self._enabled = True
-        self._canvas = tk.Canvas(self, width=self.WIDTH, height=self.HEIGHT, highlightthickness=0, bg=C["card"], cursor="hand2")
+        self._canvas = tk.Canvas(
+            self,
+            width=self.WIDTH,
+            height=self.HEIGHT,
+            highlightthickness=1,
+            highlightbackground=C["card"],
+            highlightcolor=C["accent"],
+            bg=C["card"],
+            cursor="hand2",
+            takefocus=1,
+        )
         self._canvas.pack(side="left")
         self._label = tk.Label(self, text=text, font=FS, bg=C["card"], fg=C["text2"], cursor="hand2")
         self._label.pack(side="left", padx=(10, 0))
         for widget in (self, self._canvas, self._label):
             widget.bind("<Button-1>", self._toggle)
+        self._canvas.bind("<space>", self._toggle)
+        self._canvas.bind("<Return>", self._toggle)
         reg(self, lambda w: w._repaint())
         self._draw()
 
     def _repaint(self):
         self.configure(bg=C["card"])
-        self._canvas.configure(bg=C["card"], cursor="hand2" if self._enabled else "arrow")
-        self._label.configure(bg=C["card"], fg=C["text2"] if self._enabled else C["text3"], cursor="hand2" if self._enabled else "arrow")
+        self._canvas.configure(
+            bg=C["card"],
+            highlightbackground=C["card"],
+            highlightcolor=C["accent"],
+            cursor="hand2" if self._enabled else "arrow",
+        )
+        self._label.configure(bg=C["card"], fg=C["text"] if self._enabled else C["text3"], cursor="hand2" if self._enabled else "arrow")
         self._draw()
 
     def _draw(self):
@@ -496,12 +554,25 @@ class Toggle(tk.Frame):
 
 
 class ThemeToggleBtn(tk.Canvas):
-    SIZE = 30
+    SIZE = 34
 
     def __init__(self, parent, command):
-        super().__init__(parent, width=self.SIZE, height=self.SIZE, highlightthickness=0, bd=0, bg=C["card"], cursor="hand2")
+        super().__init__(
+            parent,
+            width=self.SIZE,
+            height=self.SIZE,
+            highlightthickness=1,
+            highlightbackground=C["card"],
+            highlightcolor=C["accent"],
+            bd=0,
+            bg=C["card"],
+            cursor="hand2",
+            takefocus=1,
+        )
         self._command = command
         self.bind("<Button-1>", lambda _: self._command())
+        self.bind("<Return>", lambda _: self._command())
+        self.bind("<space>", lambda _: self._command())
         self.bind("<Enter>", lambda _: self._draw(True))
         self.bind("<Leave>", lambda _: self._draw(False))
         reg(self, lambda w: w._draw(False))
@@ -509,9 +580,10 @@ class ThemeToggleBtn(tk.Canvas):
 
     def _draw(self, hover: bool):
         self.delete("all")
-        self.configure(bg=C["card"])
+        self.configure(bg=C["card"], highlightbackground=C["card"], highlightcolor=C["accent"])
         color = C["accent"] if hover else C["text2"]
         center = self.SIZE // 2
+        self.create_oval(2, 2, self.SIZE - 2, self.SIZE - 2, fill=C["bg2"], outline=C["border"])
         if C["mode"] == "dark":
             self.create_oval(center - 4, center - 4, center + 4, center + 4, fill=color, outline=color)
             for x1, y1, x2, y2 in (
@@ -527,7 +599,72 @@ class ThemeToggleBtn(tk.Canvas):
                 self.create_line(x1, y1, x2, y2, fill=color, width=1.6, capstyle="round")
         else:
             self.create_oval(center - 6, center - 6, center + 6, center + 6, fill=color, outline=color)
-            self.create_oval(center - 2, center - 7, center + 7, center + 5, fill=C["card"], outline=C["card"])
+            self.create_oval(center - 2, center - 7, center + 7, center + 5, fill=C["bg2"], outline=C["bg2"])
+
+
+class Segmented(tk.Frame):
+    """Two-option switch used by the preview and result panes."""
+
+    def __init__(self, parent, choices: list[tuple[str, str]], on_change):
+        super().__init__(parent, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"], bd=0)
+        self._on_change = on_change
+        self._current = choices[0][0]
+        self._buttons: dict[str, tk.Button] = {}
+        for key, label in choices:
+            button = tk.Button(
+                self,
+                text=label,
+                font=FBS,
+                relief="flat",
+                bd=0,
+                padx=12,
+                pady=5,
+                cursor="hand2",
+                takefocus=1,
+                command=lambda selected=key: self.set(selected, notify=True),
+            )
+            button.pack(side="left")
+            self._buttons[key] = button
+        reg(self, lambda w: w._repaint())
+        self._repaint()
+
+    def set(self, key: str, notify: bool = False):
+        if key not in self._buttons:
+            return
+        self._current = key
+        self._repaint()
+        if notify:
+            self._on_change(key)
+
+    def _repaint(self):
+        self.configure(bg=C["bg2"], highlightbackground=C["border"])
+        for key, button in self._buttons.items():
+            active = key == self._current
+            bg = C["card"] if active else C["bg2"]
+            fg = C["text"] if active else C["text3"]
+            button.configure(bg=bg, fg=fg, activebackground=bg, activeforeground=fg, highlightthickness=0)
+
+
+class StatChip(tk.Frame):
+    def __init__(self, parent, label: str):
+        super().__init__(parent, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"], bd=0)
+        inner = tk.Frame(self, bg=C["bg2"])
+        inner.pack(fill="both", expand=True, padx=12, pady=8)
+        self._inner = inner
+        self._value = tk.Label(inner, text="—", font=FL, bg=C["bg2"], fg=C["text"], anchor="w")
+        self._value.pack(anchor="w")
+        self._caption = tk.Label(inner, text=label, font=FT, bg=C["bg2"], fg=C["text3"], anchor="w")
+        self._caption.pack(anchor="w", pady=(2, 0))
+        reg(self, lambda w: w._repaint())
+
+    def set(self, value: str):
+        self._value.configure(text=value)
+
+    def _repaint(self):
+        self.configure(bg=C["bg2"], highlightbackground=C["border"])
+        self._inner.configure(bg=C["bg2"])
+        self._value.configure(bg=C["bg2"], fg=C["text"])
+        self._caption.configure(bg=C["bg2"], fg=C["text3"])
 
 
 class App(tk.Tk):
@@ -537,16 +674,20 @@ class App(tk.Tk):
         super().__init__()
         self.title(f"{APP_NAME} v{__version__}")
         self.configure(bg=C["bg"])
-        self.geometry("1120x760")
-        self.minsize(920, 620)
+        self.geometry("1200x820")
+        self.minsize(1040, 700)
         self.resizable(True, True)
+        self._bind_runtime_fonts()
 
         self._project_path: Path | None = None
         self._running = False
         self._last_md = ""
+        self._last_output: Path | None = None
         self._help_window: tk.Toplevel | None = None
+        self._status_pair = ("tag_bg", "tag_fg")
+        self._banner_tone: str | None = None
         self._icon_photo = _load_icon_photo()
-        self._brand_logo = _load_icon_photo(52)
+        self._brand_logo = _load_icon_photo(40)
         _apply_window_icon(self, self._icon_photo)
 
         self._setup_ttk()
@@ -576,20 +717,35 @@ class App(tk.Tk):
         self._staged_var = tk.BooleanVar()
         self._copy_var = tk.BooleanVar(value=True)
 
+    def _bind_runtime_fonts(self):
+        import contexta_app.theme as theme_mod
+
+        theme_mod.bind_fonts(self)
+        global FH, FL, FS, FM, FB, FBS, FT
+        FH = theme_mod.FH
+        FL = theme_mod.FL
+        FS = theme_mod.FS
+        FM = theme_mod.FM
+        FB = theme_mod.FB
+        FBS = theme_mod.FBS
+        FT = theme_mod.FT
+
     def _setup_ttk(self):
         style = ttk.Style()
         style.theme_use("clam")
         style.configure(
             "TCombobox",
-            padding=6,
+            padding=(8, 7),
+            font=FS,
             fieldbackground=C["input"],
-            background=C["input"],
+            background=C["card"],
             foreground=C["text"],
             bordercolor=C["border"],
             arrowcolor=C["text2"],
             lightcolor=C["input"],
             darkcolor=C["input"],
             insertcolor=C["accent"],
+            relief="flat",
         )
         style.map(
             "TCombobox",
@@ -598,8 +754,8 @@ class App(tk.Tk):
             selectbackground=[("readonly", C["input"])],
             selectforeground=[("readonly", C["text"])],
         )
-        style.configure("TProgressbar", troughcolor=C["bg2"], background=C["accent"], bordercolor=C["bg"], lightcolor=C["accent"], darkcolor=C["accent"], thickness=7)
-        style.configure("TScrollbar", troughcolor=C["card"], background=C["border"], arrowcolor=C["text3"], bordercolor=C["card"], relief="flat")
+        style.configure("TProgressbar", troughcolor=C["bg2"], background=C["accent"], bordercolor=C["bg2"], lightcolor=C["accent"], darkcolor=C["accent"], thickness=6)
+        style.configure("TScrollbar", troughcolor=C["bg"], background=C["border2"], arrowcolor=C["text3"], bordercolor=C["bg"], relief="flat")
 
     def _refresh_ttk(self):
         self._setup_ttk()
@@ -619,7 +775,7 @@ class App(tk.Tk):
         reg(header, lambda w: w.configure(bg=C["card"]))
 
         header_inner = tk.Frame(header, bg=C["card"])
-        header_inner.pack(fill="both", expand=True, padx=22, pady=(18, 16))
+        header_inner.pack(fill="both", expand=True, padx=20, pady=(14, 14))
         reg(header_inner, lambda w: w.configure(bg=C["card"]))
 
         left = tk.Frame(header_inner, bg=C["card"])
@@ -628,10 +784,10 @@ class App(tk.Tk):
 
         if self._brand_logo:
             brand = tk.Label(left, image=self._brand_logo, bg=C["card"])
-            brand.pack(side="left", padx=(0, 14))
+            brand.pack(side="left", padx=(0, 12))
             reg(brand, lambda w: w.configure(bg=C["card"]))
         else:
-            BrandMark(left).pack(side="left", padx=(0, 14))
+            BrandMark(left).pack(side="left", padx=(0, 12))
 
         titles = tk.Frame(left, bg=C["card"])
         titles.pack(side="left", fill="x", expand=True)
@@ -641,35 +797,68 @@ class App(tk.Tk):
         title.pack(anchor="w")
         reg(title, lambda w: w.configure(bg=C["card"], fg=C["text"]))
 
-        subtitle = tk.Label(titles, text="Curated context packs for debugging, onboarding, reviews, and refactors.", font=FS, bg=C["card"], fg=C["text2"], wraplength=760, justify="left")
-        subtitle.pack(anchor="w", pady=(3, 0))
+        subtitle = tk.Label(
+            titles,
+            text="Context packs for debugging, reviews, onboarding, and AI handoffs.",
+            font=FS,
+            bg=C["card"],
+            fg=C["text2"],
+            wraplength=640,
+            justify="left",
+        )
+        subtitle.pack(anchor="w", pady=(2, 0))
         reg(subtitle, lambda w: w.configure(bg=C["card"], fg=C["text2"]))
 
         right = tk.Frame(header_inner, bg=C["card"])
         right.pack(side="right")
         reg(right, lambda w: w.configure(bg=C["card"]))
 
-        self._version_badge = tk.Label(right, text=f"v{__version__}", font=FT, bg=C["tag_bg"], fg=C["tag_fg"], padx=12, pady=5)
-        self._version_badge.pack(side="right", padx=(10, 0))
+        self._version_badge = tk.Label(right, text=f"v{__version__}", font=FT, bg=C["tag_bg"], fg=C["tag_fg"], padx=10, pady=4)
+        self._version_badge.pack(side="right", padx=(12, 0))
         reg(self._version_badge, lambda w: w.configure(bg=C["tag_bg"], fg=C["tag_fg"]))
-        self._help_btn = FlatBtn(right, "Quick Guide", "violet", self._open_help, font=FBS, padx=14, pady=7, surface_key="card")
-        self._help_btn.pack(side="right", padx=(0, 10))
-        ThemeToggleBtn(right, self._toggle_theme).pack(side="right")
+        self._help_btn = FlatBtn(right, "Guide", "violet", self._open_help, font=FBS, padx=12, pady=6, surface_key="card", variant="ghost")
+        self._help_btn.pack(side="right", padx=(8, 0))
+        theme_box = tk.Frame(right, bg=C["card"])
+        theme_box.pack(side="right")
+        reg(theme_box, lambda w: w.configure(bg=C["card"]))
+        ThemeToggleBtn(theme_box, self._toggle_theme).pack(side="left")
+        self._theme_caption = tk.Label(theme_box, text="Dark", font=FT, bg=C["card"], fg=C["text3"])
+        self._theme_caption.pack(side="left", padx=(6, 0))
+        reg(self._theme_caption, lambda w: w.configure(bg=C["card"], fg=C["text3"], text="Dark" if C["mode"] == "dark" else "Light"))
 
-        self._scroll_shell = ScrollArea(self)
-        self._scroll_shell.pack(fill="both", expand=True, padx=18, pady=(18, 10))
-        shell = self._scroll_shell.content
-        shell.grid_columnconfigure(0, weight=11, uniform="cols")
-        shell.grid_columnconfigure(1, weight=13, uniform="cols")
+        rule = tk.Frame(self, bg=C["border"], height=1)
+        rule.pack(fill="x")
+        reg(rule, lambda w: w.configure(bg=C["border"]))
 
-        self._build_controls(shell)
-        self._build_preview(shell)
-        self._build_log(shell)
+        body = tk.Frame(self, bg=C["bg"])
+        reg(body, lambda w: w.configure(bg=C["bg"]))
+        body.grid_columnconfigure(0, weight=5, minsize=420)
+        body.grid_columnconfigure(1, weight=6, minsize=460)
+        body.grid_rowconfigure(0, weight=1)
+
+        self._controls_scroll = ScrollArea(body)
+        self._controls_scroll.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        controls = self._controls_scroll.content
+        controls.grid_columnconfigure(0, weight=1)
+        self._build_controls(controls)
+        self._register_scroll_target(self._controls_scroll, self._controls_scroll._canvas)
+        self._register_scroll_target(self._controls_scroll._canvas)
+        self._register_scroll_target(self._controls_scroll.content, self._controls_scroll._canvas)
+
+        stage = tk.Frame(body, bg=C["bg"])
+        stage.grid(row=0, column=1, sticky="nsew")
+        reg(stage, lambda w: w.configure(bg=C["bg"]))
+        stage.grid_columnconfigure(0, weight=1)
+        stage.grid_rowconfigure(0, weight=1)
+        stage.grid_rowconfigure(1, weight=0)
+        self._build_preview(stage)
+        self._build_log(stage)
+
+        self._build_banner()
         self._build_footer()
-        self._register_scroll_target(self._scroll_shell, self._scroll_shell._canvas)
-        self._register_scroll_target(self._scroll_shell._canvas)
-        self._register_scroll_target(self._scroll_shell.content, self._scroll_shell._canvas)
+        body.pack(fill="both", expand=True, padx=16, pady=16)
         self._bind_preview_updates()
+        self._show_empty_state()
 
     def _setup_scroll_routing(self):
         for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
@@ -699,187 +888,311 @@ class App(tk.Tk):
 
     def _build_controls(self, parent):
         left = tk.Frame(parent, bg=C["bg"])
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left.grid(row=0, column=0, sticky="ew")
         left.grid_columnconfigure(0, weight=1)
         reg(left, lambda w: w.configure(bg=C["bg"]))
 
         project_card = Card(left)
         project_card.grid(row=0, column=0, sticky="ew")
         project_inner = project_card.inner()
-        self._section(project_inner, "Project Source", "Choose the folder that will be analyzed.").pack(anchor="w")
+        self._section(project_inner, "Project", "Folder Contexta will read. Nothing in it is modified.").pack(anchor="w")
         row = tk.Frame(project_inner, bg=C["card"])
-        row.pack(fill="x", pady=(12, 0))
+        row.pack(fill="x", pady=(14, 0))
         reg(row, lambda w: w.configure(bg=C["card"]))
-        entry = tk.Entry(row, textvariable=self._path_var, font=FM, bg=C["input"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0)
-        entry.pack(side="left", fill="x", expand=True, ipady=9, padx=(12, 0))
-        reg(entry, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"]))
-        self._btn_pick = FlatBtn(row, "Browse", "accent_dk", self._pick_folder, font=FBS, surface_key="card")
+        path_shell = self._input_shell(row)
+        path_shell.pack(side="left", fill="x", expand=True)
+        entry = tk.Entry(
+            path_shell,
+            textvariable=self._path_var,
+            font=FM,
+            bg=C["input"],
+            fg=C["text"],
+            insertbackground=C["accent"],
+            relief="flat",
+            bd=0,
+            selectbackground=C["accent"],
+            selectforeground=readable_fg(C["accent"]),
+        )
+        entry.pack(fill="x", padx=10, ipady=8)
+        reg(entry, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"], selectbackground=C["accent"], selectforeground=readable_fg(C["accent"])))
+        self._bind_input_focus(entry, path_shell)
+        self._btn_pick = FlatBtn(row, "Browse", "accent", self._pick_folder, font=FBS, padx=14, pady=7, surface_key="card", variant="soft")
         self._btn_pick.pack(side="left", padx=(10, 0))
 
-        guide_card = Card(left)
-        guide_card.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        guide_inner = guide_card.inner()
-        self._section(guide_inner, "Quick Start", "Use this as your default flow when you just want a good pack fast.").pack(anchor="w")
-        guide_steps = tk.Label(
-            guide_inner,
-            text="1. Choose a project folder.\n2. Pick a Context Pack.\n3. Add Focus only if you want to bias the selection.\n4. Create Context Pack from the fixed action bar below.",
-            justify="left",
-            font=FS,
-            bg=C["card"],
-            fg=C["text2"],
-            wraplength=360,
-        )
-        guide_steps.pack(anchor="w", pady=(12, 0))
-        reg(guide_steps, lambda w: w.configure(bg=C["card"], fg=C["text2"]))
-        self._guide_cta = FlatBtn(guide_inner, "Open Detailed Guide", "violet", self._open_help, font=FBS, padx=14, pady=7, surface_key="card")
-        self._guide_cta.pack(anchor="w", pady=(12, 0))
-
         strategy_card = Card(left)
-        strategy_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        strategy_card.grid(row=1, column=0, sticky="ew", pady=(12, 0))
         strategy_inner = strategy_card.inner()
-        self._section(strategy_inner, "Context Strategy", "Packs and modes define how Contexta curates the codebase.").pack(anchor="w")
-        self._combo_field(strategy_inner, "Context Pack", self._pack_var, PACK_OPTIONS, "Preset workflow bundle. Good default if you do not want to fine-tune each option.").pack(fill="x", pady=(12, 0))
-        self._combo_field(strategy_inner, "Context Mode", self._mode_var, CONTEXT_MODE_OPTIONS, "How Contexta chooses files and relationships for the pack.").pack(fill="x", pady=(10, 0))
-        self._entry_field(strategy_inner, "Focus", self._focus_var, "Bug, feature, area, or keyword", "Optional. Use names like login, payments, renderer, or memory leak to bias the selection.").pack(fill="x", pady=(10, 0))
+        self._section(strategy_inner, "Context strategy", "A pack is the preset. Mode and focus shape which files rise to the top.").pack(anchor="w")
+        self._combo_field(strategy_inner, "Context pack", self._pack_var, PACK_OPTIONS).pack(fill="x", pady=(14, 0))
+        self._combo_field(strategy_inner, "Context mode", self._mode_var, CONTEXT_MODE_OPTIONS).pack(fill="x", pady=(12, 0))
+        self._entry_field(strategy_inner, "Focus", self._focus_var, "Optional. Try login, billing, or a file name.").pack(fill="x", pady=(12, 0))
 
         output_card = Card(left)
-        output_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        output_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         output_inner = output_card.inner()
-        self._section(output_inner, "AI Output Profile", "Tune the pack for the model and the job you want done.").pack(anchor="w")
-        self._combo_field(output_inner, "AI Target", self._ai_var, AI_PROFILE_OPTIONS, "Adjusts formatting and structure for the AI you plan to use.").pack(fill="x", pady=(12, 0))
-        self._combo_field(output_inner, "Task Mode", self._task_var, TASK_PROFILE_OPTIONS, "Tells Contexta what you want the AI to do with this project.").pack(fill="x", pady=(10, 0))
-        self._combo_field(output_inner, "Compression", self._compression_var, COMPRESSION_OPTIONS, "Controls how much raw code is kept versus summaries and signatures.").pack(fill="x", pady=(10, 0))
+        self._section(output_inner, "Output", "Who will read the pack, what they should do, and how much code to keep.").pack(anchor="w")
+        self._combo_field(output_inner, "AI target", self._ai_var, AI_PROFILE_OPTIONS).pack(fill="x", pady=(14, 0))
+        self._combo_field(output_inner, "Task", self._task_var, TASK_PROFILE_OPTIONS).pack(fill="x", pady=(12, 0))
+        self._combo_field(output_inner, "Compression", self._compression_var, COMPRESSION_OPTIONS).pack(fill="x", pady=(12, 0))
 
-        goal_label = tk.Label(output_inner, text="Custom Goal", font=FT, bg=C["card"], fg=C["text3"])
-        goal_label.pack(anchor="w", pady=(12, 6))
+        goal_label = tk.Label(output_inner, text="Custom goal", font=FT, bg=C["card"], fg=C["text3"])
+        goal_label.pack(anchor="w", pady=(14, 6))
         reg(goal_label, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
-        self._prompt = tk.Text(output_inner, height=4, font=FS, bg=C["input"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0, padx=12, pady=10, wrap="word")
+        goal_shell = self._input_shell(output_inner)
+        goal_shell.pack(fill="x")
+        self._prompt = tk.Text(
+            goal_shell,
+            height=3,
+            font=FS,
+            bg=C["input"],
+            fg=C["text"],
+            insertbackground=C["accent"],
+            relief="flat",
+            bd=0,
+            padx=10,
+            pady=8,
+            wrap="word",
+            selectbackground=C["accent"],
+            selectforeground=readable_fg(C["accent"]),
+        )
         self._prompt.pack(fill="x")
-        reg(self._prompt, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"]))
+        reg(self._prompt, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"], selectbackground=C["accent"], selectforeground=readable_fg(C["accent"])))
+        self._bind_input_focus(self._prompt, goal_shell)
         self._register_scroll_target(self._prompt)
 
         options_card = Card(left)
-        options_card.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        options_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         options_inner = options_card.inner()
-        self._section(options_inner, "Options", "Practical toggles for scanning and exporting.").pack(anchor="w")
+        self._section(options_inner, "Scan options", "Widen the scan or lean on git. Details live in the guide.").pack(anchor="w")
         toggles = tk.Frame(options_inner, bg=C["card"])
         toggles.pack(fill="x", pady=(12, 0))
+        toggles.grid_columnconfigure(0, weight=1)
+        toggles.grid_columnconfigure(1, weight=1)
         reg(toggles, lambda w: w.configure(bg=C["card"]))
-        self._toggle_hidden = Toggle(toggles, "Include hidden files", self._hidden_var)
-        self._toggle_hidden.pack(anchor="w", pady=(0, 8))
-        self._toggle_unknown = Toggle(toggles, "Include unknown extensions", self._unknown_var)
-        self._toggle_unknown.pack(anchor="w", pady=(0, 8))
-        self._toggle_diff = Toggle(toggles, "Prefer recent git changes", self._diff_var)
-        self._toggle_diff.pack(anchor="w", pady=(0, 8))
-        self._toggle_staged = Toggle(toggles, "Staged only", self._staged_var)
-        self._toggle_staged.pack(anchor="w", pady=(0, 8))
-        self._toggle_copy = Toggle(toggles, "Copy latest pack after export", self._copy_var)
-        self._toggle_copy.pack(anchor="w")
-        option_help = tk.Label(options_inner, text=OPTION_GUIDE, justify="left", wraplength=360, font=FT, bg=C["card"], fg=C["text3"])
-        option_help.pack(anchor="w", pady=(12, 0))
-        reg(option_help, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+        toggle_specs = (
+            ("_toggle_hidden", "Hidden files", self._hidden_var),
+            ("_toggle_unknown", "Unknown extensions", self._unknown_var),
+            ("_toggle_diff", "Prefer git changes", self._diff_var),
+            ("_toggle_staged", "Staged changes only", self._staged_var),
+            ("_toggle_copy", "Copy pack after export", self._copy_var),
+        )
+        for index, (attr, label, variable) in enumerate(toggle_specs):
+            toggle = Toggle(toggles, label, variable)
+            setattr(self, attr, toggle)
+            toggle.grid(row=index // 2, column=index % 2, sticky="w", pady=5, padx=(0, 8))
+
+        # Room for options added elsewhere (budgets, redaction, presets).
+        self.extension_slot = tk.Frame(left, bg=C["bg"])
+        self.extension_slot.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        reg(self.extension_slot, lambda w: w.configure(bg=C["bg"]))
+
+        mcp_card = Card(left)
+        mcp_card.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        mcp_inner = mcp_card.inner()
+        self._section(mcp_inner, "MCP Server Setup", "Auto-configure Contexta as a tool server for your AI editor.").pack(anchor="w")
+        mcp_btns = tk.Frame(mcp_inner, bg=C["card"])
+        mcp_btns.pack(fill="x", pady=(12, 0))
+        reg(mcp_btns, lambda w: w.configure(bg=C["card"]))
+        FlatBtn(mcp_btns, "Claude Code", "accent_dk", self._setup_claude_code, font=FBS, surface_key="card").pack(side="left", padx=(0, 8))
+        FlatBtn(mcp_btns, "Cursor", "violet", self._setup_cursor, font=FBS, surface_key="card").pack(side="left", padx=(0, 8))
+        FlatBtn(mcp_btns, "Windsurf", "green", self._setup_windsurf, font=FBS, surface_key="card").pack(side="left")
+        mcp_hint = tk.Label(mcp_inner, text="Writes the MCP config so the editor can call Contexta as a tool server. Restart the editor after setup.", font=FT, bg=C["card"], fg=C["text3"], wraplength=360, justify="left")
+        mcp_hint.pack(anchor="w", pady=(10, 0))
+        reg(mcp_hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
 
     def _build_preview(self, parent):
-        right = tk.Frame(parent, bg=C["bg"])
-        right.grid(row=0, column=1, sticky="nsew")
-        right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(0, weight=1)
-        reg(right, lambda w: w.configure(bg=C["bg"]))
+        self._reader = Card(parent, pad=14)
+        self._reader.grid(row=0, column=0, sticky="nsew")
+        inner = self._reader.inner()
+        inner.grid_columnconfigure(0, weight=1)
+        inner.grid_rowconfigure(2, weight=1)
 
-        preview_card = Card(right)
-        preview_card.grid(row=0, column=0, sticky="nsew")
-        preview_inner = preview_card.inner()
-        preview_inner.grid_columnconfigure(0, weight=1)
-        preview_inner.grid_rowconfigure(1, weight=1)
-        self._section(preview_inner, "Pack Preview", "What Contexta will prioritize in the generated pack.").grid(row=0, column=0, sticky="w")
-        preview_shell = tk.Frame(preview_inner, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"])
-        preview_shell.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
-        preview_shell.grid_columnconfigure(0, weight=1)
-        preview_shell.grid_rowconfigure(0, weight=1)
-        reg(preview_shell, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
-        self._preview = tk.Text(preview_shell, height=18, font=FS, bg=C["bg2"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0, padx=14, pady=14, wrap="word", state="disabled")
+        header = tk.Frame(inner, bg=C["card"])
+        header.grid(row=0, column=0, sticky="ew")
+        reg(header, lambda w: w.configure(bg=C["card"]))
+        self._section(header, "Pack", "What this export will emphasize, then the Markdown itself.").pack(side="left", anchor="w")
+        self._view_switch = Segmented(header, [("preview", "Preview"), ("result", "Result")], self._set_view)
+        self._view_switch.pack(side="right", anchor="e")
+
+        self._metrics = tk.Frame(inner, bg=C["card"])
+        self._metrics.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        reg(self._metrics, lambda w: w.configure(bg=C["card"]))
+        self._metrics.grid_columnconfigure(0, weight=1)
+        self._metrics.grid_columnconfigure(1, weight=1)
+        self._metrics.grid_columnconfigure(2, weight=1)
+        self._chip_scanned = StatChip(self._metrics, "Files scanned")
+        self._chip_selected = StatChip(self._metrics, "Selected")
+        self._chip_tokens = StatChip(self._metrics, "Rough tokens")
+        self._chip_scanned.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self._chip_selected.grid(row=0, column=1, sticky="ew", padx=4)
+        self._chip_tokens.grid(row=0, column=2, sticky="ew", padx=(8, 0))
+
+        self._preview_stack = tk.Frame(inner, bg=C["card"])
+        self._preview_stack.grid(row=2, column=0, sticky="nsew", pady=(12, 0))
+        self._preview_stack.grid_columnconfigure(0, weight=1)
+        self._preview_stack.grid_rowconfigure(0, weight=1)
+        reg(self._preview_stack, lambda w: w.configure(bg=C["card"]))
+
+        self._empty_state = tk.Frame(self._preview_stack, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"])
+        self._empty_state.grid(row=0, column=0, sticky="nsew")
+        reg(self._empty_state, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
+        empty_inner = tk.Frame(self._empty_state, bg=C["bg2"])
+        empty_inner.place(relx=0.5, rely=0.5, anchor="center")
+        reg(empty_inner, lambda w: w.configure(bg=C["bg2"]))
+        empty_mark = tk.Label(empty_inner, text="GET STARTED", font=FT, bg=C["bg2"], fg=C["accent"])
+        empty_mark.pack(anchor="center")
+        reg(empty_mark, lambda w: w.configure(bg=C["bg2"], fg=C["accent"]))
+        empty_title = tk.Label(empty_inner, text="Choose a project to begin", font=FL, bg=C["bg2"], fg=C["text"])
+        empty_title.pack(anchor="center", pady=(8, 4))
+        reg(empty_title, lambda w: w.configure(bg=C["bg2"], fg=C["text"]))
+        empty_copy = tk.Label(
+            empty_inner,
+            text="Pick a folder, keep the onboarding pack or switch it,\nthen create the Markdown from the bar below.",
+            font=FS,
+            bg=C["bg2"],
+            fg=C["text2"],
+            justify="center",
+        )
+        empty_copy.pack(anchor="center")
+        reg(empty_copy, lambda w: w.configure(bg=C["bg2"], fg=C["text2"]))
+        steps = tk.Label(
+            empty_inner,
+            text="1  Folder      2  Pack      3  Create",
+            font=FT,
+            bg=C["bg2"],
+            fg=C["text3"],
+        )
+        steps.pack(anchor="center", pady=(12, 14))
+        reg(steps, lambda w: w.configure(bg=C["bg2"], fg=C["text3"]))
+        FlatBtn(empty_inner, "Choose folder", "accent", self._pick_folder, font=FBS, padx=14, pady=7, surface_key="bg2", variant="solid").pack(anchor="center")
+
+        self._preview_shell = tk.Frame(self._preview_stack, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"])
+        self._preview_shell.grid(row=0, column=0, sticky="nsew")
+        self._preview_shell.grid_columnconfigure(0, weight=1)
+        self._preview_shell.grid_rowconfigure(0, weight=1)
+        reg(self._preview_shell, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
+        self._preview = tk.Text(
+            self._preview_shell,
+            font=FS,
+            bg=C["bg2"],
+            fg=C["text"],
+            insertbackground=C["accent"],
+            relief="flat",
+            bd=0,
+            padx=14,
+            pady=12,
+            wrap="word",
+            state="disabled",
+            cursor="arrow",
+            spacing1=1,
+            spacing3=2,
+        )
         self._preview.grid(row=0, column=0, sticky="nsew")
         reg(self._preview, lambda w: w.configure(bg=C["bg2"], fg=C["text"], insertbackground=C["accent"]))
-        preview_scroll = ttk.Scrollbar(preview_shell, orient="vertical", command=self._preview.yview)
+        preview_scroll = ttk.Scrollbar(self._preview_shell, orient="vertical", command=self._preview.yview)
         preview_scroll.grid(row=0, column=1, sticky="ns")
         self._preview.configure(yscrollcommand=preview_scroll.set)
-        self._register_scroll_target(preview_shell, self._preview)
+        self._register_scroll_target(self._preview_shell, self._preview)
         self._register_scroll_target(self._preview)
+        self._configure_preview_tags()
 
-        note_card = Card(right)
-        note_card.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        note_inner = note_card.inner()
-        self._section(note_inner, "Reading Tips", "How to use the main controls without guessing.").pack(anchor="w")
-        tips = tk.Label(
-            note_inner,
-            text="Context Pack is the preset. Context Mode is the selection strategy. AI Target changes formatting. Task Mode changes the reading lens. Compression controls how much raw code survives. Focus boosts scoring, ordering, excerpts, and related context instead of blindly filtering files.",
-            justify="left",
-            wraplength=500,
+        self._result_shell = tk.Frame(self._preview_stack, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"])
+        self._result_shell.grid(row=0, column=0, sticky="nsew")
+        self._result_shell.grid_columnconfigure(0, weight=1)
+        self._result_shell.grid_rowconfigure(1, weight=1)
+        reg(self._result_shell, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
+        self._result_meta = tk.Label(self._result_shell, text="", font=FT, bg=C["bg2"], fg=C["text3"], anchor="w", justify="left", wraplength=560, padx=14, pady=8)
+        self._result_meta.grid(row=0, column=0, columnspan=2, sticky="ew")
+        reg(self._result_meta, lambda w: w.configure(bg=C["bg2"], fg=C["text3"]))
+        self._result = tk.Text(
+            self._result_shell,
             font=FS,
-            bg=C["card"],
-            fg=C["text2"],
+            bg=C["bg2"],
+            fg=C["text"],
+            relief="flat",
+            bd=0,
+            padx=14,
+            pady=8,
+            wrap="word",
+            state="disabled",
+            cursor="arrow",
         )
-        tips.pack(anchor="w", pady=(12, 0))
-        reg(tips, lambda w: w.configure(bg=C["card"], fg=C["text2"]))
+        self._result.grid(row=1, column=0, sticky="nsew")
+        reg(self._result, lambda w: w.configure(bg=C["bg2"], fg=C["text"]))
+        result_scroll = ttk.Scrollbar(self._result_shell, orient="vertical", command=self._result.yview)
+        result_scroll.grid(row=1, column=1, sticky="ns")
+        self._result.configure(yscrollcommand=result_scroll.set)
+        self._register_scroll_target(self._result_shell, self._result)
+        self._register_scroll_target(self._result)
+        self._configure_result_tags()
+        self._result_shell.grid_remove()
+        self._preview_shell.grid_remove()
 
     def _build_log(self, parent):
-        log_card = Card(parent)
-        log_card.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        log_card = Card(parent, pad=12)
+        log_card.grid(row=1, column=0, sticky="ew", pady=(12, 0))
         log_inner = log_card.inner()
         log_inner.grid_columnconfigure(0, weight=1)
-        self._section(log_inner, "Activity", "Scan progress, selection notes, and export messages.").grid(row=0, column=0, sticky="w")
+        self._section(log_inner, "Activity", "Scan notes appear here while a pack is created.").grid(row=0, column=0, sticky="w")
         log_shell = tk.Frame(log_inner, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"])
-        log_shell.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        log_shell.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         log_shell.grid_columnconfigure(0, weight=1)
         log_shell.grid_rowconfigure(0, weight=1)
         reg(log_shell, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
-        self._log = tk.Text(log_shell, height=9, font=FM, bg=C["bg2"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0, padx=12, pady=12, wrap="word", state="disabled")
+        self._log = tk.Text(log_shell, height=6, font=FM, bg=C["bg2"], fg=C["text2"], insertbackground=C["accent"], relief="flat", bd=0, padx=12, pady=8, wrap="word", state="disabled", cursor="arrow")
         self._log.grid(row=0, column=0, sticky="nsew")
-        reg(self._log, lambda w: w.configure(bg=C["bg2"], fg=C["text"], insertbackground=C["accent"]))
+        reg(self._log, lambda w: w.configure(bg=C["bg2"], fg=C["text2"], insertbackground=C["accent"]))
         scrollbar = ttk.Scrollbar(log_shell, orient="vertical", command=self._log.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self._log.configure(yscrollcommand=scrollbar.set)
         self._register_scroll_target(log_shell, self._log)
         self._register_scroll_target(self._log)
+        self._configure_log_tags()
+        self._log_write("Waiting for a project.", "muted")
 
-        for tag, color_key in (("ok", "green"), ("warn", "amber"), ("err", "red"), ("info", "accent"), ("muted", "text3")):
-            self._log.tag_config(tag, foreground=C[color_key])
+    def _build_banner(self):
+        self._banner = tk.Frame(self, bg=C["danger_soft"])
+        reg(self._banner, lambda w: self._paint_banner())
+        self._banner_text = ""
+        self._banner_label = tk.Label(self._banner, text="", font=FS, bg=C["danger_soft"], fg=C["red"], anchor="w", justify="left", wraplength=860)
+        self._banner_label.pack(side="left", fill="x", expand=True, padx=16, pady=10)
+        self._banner_dismiss = tk.Label(self._banner, text="Dismiss", font=FBS, bg=C["danger_soft"], fg=C["red"], cursor="hand2", padx=8)
+        self._banner_dismiss.pack(side="right", padx=16)
+        self._banner_dismiss.bind("<Button-1>", lambda _event: self._hide_banner())
+        self._banner_dismiss.bind("<Return>", lambda _event: self._hide_banner())
 
     def _build_footer(self):
-        footer = tk.Frame(self, bg=C["card"], highlightthickness=1, highlightbackground=C["border"])
-        footer.pack(fill="x", padx=18, pady=(0, 18))
-        reg(footer, lambda w: w.configure(bg=C["card"], highlightbackground=C["border"]))
+        self._footer = tk.Frame(self, bg=C["card"])
+        self._footer.pack(fill="x", side="bottom")
+        reg(self._footer, lambda w: w.configure(bg=C["card"]))
+        rule = tk.Frame(self._footer, bg=C["border"], height=1)
+        rule.pack(fill="x")
+        reg(rule, lambda w: w.configure(bg=C["border"]))
 
-        inner = tk.Frame(footer, bg=C["card"])
-        inner.pack(fill="x", padx=16, pady=14)
+        inner = tk.Frame(self._footer, bg=C["card"])
+        inner.pack(fill="x", padx=16, pady=12)
         reg(inner, lambda w: w.configure(bg=C["card"]))
-        inner.grid_columnconfigure(1, weight=1)
+        inner.grid_columnconfigure(2, weight=1)
 
-        label = tk.Label(inner, text="Export Actions", font=FL, bg=C["card"], fg=C["text"])
-        label.grid(row=0, column=0, sticky="w")
-        reg(label, lambda w: w.configure(bg=C["card"], fg=C["text"]))
-        hint = tk.Label(inner, text="Generate from here at any time. The page above can scroll independently.", font=FT, bg=C["card"], fg=C["text3"])
-        hint.grid(row=1, column=0, columnspan=3, sticky="w", pady=(3, 0))
-        reg(hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
-
-        self._status = tk.Label(inner, text="Idle", font=FT, bg=C["tag_bg"], fg=C["tag_fg"], padx=12, pady=6)
-        self._status.grid(row=0, column=2, sticky="e")
-        reg(self._status, lambda w: w.configure(bg=C["tag_bg"], fg=C["tag_fg"]))
-
-        self._progress = ttk.Progressbar(inner, style="TProgressbar", mode="indeterminate")
-        self._progress.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-
-        actions = tk.Frame(inner, bg=C["card"])
-        actions.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
-        reg(actions, lambda w: w.configure(bg=C["card"]))
-        actions.grid_columnconfigure(2, weight=1)
-
-        self._btn_generate = FlatBtn(actions, "Create Context Pack", "green", self._start, surface_key="card")
+        self._btn_generate = FlatBtn(inner, "Create context pack", "accent", self._start, surface_key="card")
         self._btn_generate.configure(state="disabled")
         self._btn_generate.grid(row=0, column=0, sticky="w")
-        self._btn_copy = FlatBtn(actions, "Copy Latest", "violet", self._copy_to_clipboard, font=FBS, surface_key="card")
+        self._btn_copy = FlatBtn(inner, "Copy latest", "violet", self._copy_to_clipboard, font=FBS, surface_key="card", variant="ghost")
         self._btn_copy.configure(state="disabled")
-        self._btn_copy.grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self._btn_copy.grid(row=0, column=1, sticky="w", padx=(8, 0))
+
+        self._status_text = "Choose a folder"
+        self._status = tk.Label(inner, text=self._status_text, font=FT, bg=C["tag_bg"], fg=C["tag_fg"], padx=10, pady=5)
+        self._status.grid(row=0, column=3, sticky="e")
+        reg(self._status, lambda w: self._paint_status())
+
+        hint = tk.Label(inner, text="Writes a Markdown file to your desktop.", font=FT, bg=C["card"], fg=C["text3"])
+        hint.grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        reg(hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+
+        self._progress = ttk.Progressbar(inner, style="TProgressbar", mode="indeterminate")
+        self._progress.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        self._progress.grid_remove()
 
     def _section(self, parent, title: str, subtitle: str):
         row = tk.Frame(parent, bg=C["card"])
@@ -887,10 +1200,27 @@ class App(tk.Tk):
         title_label = tk.Label(row, text=title, font=FL, bg=C["card"], fg=C["text"])
         title_label.pack(anchor="w")
         reg(title_label, lambda w: w.configure(bg=C["card"], fg=C["text"]))
-        subtitle_label = tk.Label(row, text=subtitle, font=FT, bg=C["card"], fg=C["text3"])
+        subtitle_label = tk.Label(row, text=subtitle, font=FT, bg=C["card"], fg=C["text3"], justify="left", wraplength=260)
         subtitle_label.pack(anchor="w", pady=(3, 0))
+        # Wrap to the card width. A fixed width clipped the text on narrow cards.
+        parent.bind("<Configure>", lambda e, lab=subtitle_label: lab.configure(wraplength=max(e.width - 8, 160)), add="+")
         reg(subtitle_label, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
         return row
+
+    def _input_shell(self, parent):
+        shell = tk.Frame(parent, bg=C["input"], highlightthickness=1, highlightbackground=C["border"], highlightcolor=C["accent"], bd=0)
+        reg(shell, lambda w: w.configure(bg=C["input"], highlightbackground=C["border"], highlightcolor=C["accent"]))
+        return shell
+
+    def _bind_input_focus(self, widget, shell):
+        def on_in(_event):
+            shell.configure(highlightbackground=C["accent"])
+
+        def on_out(_event):
+            shell.configure(highlightbackground=C["border"])
+
+        widget.bind("<FocusIn>", on_in, add="+")
+        widget.bind("<FocusOut>", on_out, add="+")
 
     def _combo_field(self, parent, label: str, var: tk.StringVar, options: dict[str, str], helper_text: str = ""):
         frame = tk.Frame(parent, bg=C["card"])
@@ -898,15 +1228,15 @@ class App(tk.Tk):
         label_widget = tk.Label(frame, text=label, font=FT, bg=C["card"], fg=C["text3"])
         label_widget.pack(anchor="w", pady=(0, 6))
         reg(label_widget, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
-        values = [f"{key} - {value}" for key, value in options.items()]
+        values = [f"{key}  ·  {value}" for key, value in options.items()]
         combo = ttk.Combobox(frame, values=values, state="readonly", font=FS)
         combo.pack(fill="x")
-        current_label = f"{var.get()} - {options[var.get()]}"
+        current_label = f"{var.get()}  ·  {options[var.get()]}"
         combo.set(current_label)
-        combo.bind("<<ComboboxSelected>>", lambda _e, v=var, c=combo: v.set(c.get().split(" - ", 1)[0]))
+        combo.bind("<<ComboboxSelected>>", lambda _e, v=var, c=combo: v.set(c.get().split("  ·  ", 1)[0]))
         self._combo_widgets[str(var)] = (var, combo, options)
         if helper_text:
-            helper = tk.Label(frame, text=helper_text, font=FT, bg=C["card"], fg=C["text3"], wraplength=360, justify="left")
+            helper = tk.Label(frame, text=helper_text, font=FT, bg=C["card"], fg=C["text3"], wraplength=420, justify="left")
             helper.pack(anchor="w", pady=(6, 0))
             reg(helper, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
         return frame
@@ -917,15 +1247,29 @@ class App(tk.Tk):
         label_widget = tk.Label(frame, text=label, font=FT, bg=C["card"], fg=C["text3"])
         label_widget.pack(anchor="w", pady=(0, 6))
         reg(label_widget, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
-        entry = tk.Entry(frame, textvariable=var, font=FS, bg=C["input"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0)
-        entry.pack(fill="x", ipady=8, padx=(12, 0))
-        reg(entry, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"]))
-        helper = tk.Label(frame, text=hint, font=FT, bg=C["card"], fg=C["text3"])
+        shell = self._input_shell(frame)
+        shell.pack(fill="x")
+        entry = tk.Entry(
+            shell,
+            textvariable=var,
+            font=FS,
+            bg=C["input"],
+            fg=C["text"],
+            insertbackground=C["accent"],
+            relief="flat",
+            bd=0,
+            selectbackground=C["accent"],
+            selectforeground=readable_fg(C["accent"]),
+        )
+        entry.pack(fill="x", padx=10, ipady=7)
+        reg(entry, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"], selectbackground=C["accent"], selectforeground=readable_fg(C["accent"])))
+        self._bind_input_focus(entry, shell)
+        helper = tk.Label(frame, text=hint, font=FT, bg=C["card"], fg=C["text3"], wraplength=420, justify="left")
         helper.pack(anchor="w", pady=(6, 0))
         reg(helper, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
         if helper_text:
-            explainer = tk.Label(frame, text=helper_text, font=FT, bg=C["card"], fg=C["text3"], wraplength=360, justify="left")
-            explainer.pack(anchor="w", pady=(6, 0))
+            explainer = tk.Label(frame, text=helper_text, font=FT, bg=C["card"], fg=C["text3"], wraplength=420, justify="left")
+            explainer.pack(anchor="w", pady=(4, 0))
             reg(explainer, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
         return frame
 
@@ -995,7 +1339,7 @@ class App(tk.Tk):
         for _name, (variable, combo, options) in self._combo_widgets.items():
             key = variable.get()
             if key in options:
-                combo.set(f"{key} - {options[key]}")
+                combo.set(f"{key}  ·  {options[key]}")
         self._refresh_preview()
 
     def _sync_option_states(self):
@@ -1026,82 +1370,207 @@ class App(tk.Tk):
         section_titles = section_titles_for_preview(mode_key, task_key, bool(custom_goal))
         guidance_lines = format_model_guidance(ai_key).splitlines()
 
-        lines = [
-            f"Pack: {PACK_OPTIONS.get(pack_key, 'Custom Pack')}",
-            f"Why this pack: {PACK_HELP.get(pack_key, 'Custom workflow bundle.')}",
-            "",
-            f"Mode: {CONTEXT_MODE_OPTIONS.get(mode_key, mode_key)}",
-            f"What mode does: {MODE_HELP.get(mode_key, 'Controls how Contexta curates project files.')}",
-            "",
-            f"AI target: {AI_PROFILE_OPTIONS.get(ai_key, ai_key)}",
-            f"What AI target changes: {AI_HELP.get(ai_key, 'Adjusts formatting for the selected model.')}",
-            "",
-            f"Task: {TASK_PROFILE_OPTIONS.get(task_key, task_key)}",
-            f"What task changes: {TASK_HELP.get(task_key, 'Shapes the summary and prompt framing.')}",
-            "",
-            f"Compression: {COMPRESSION_OPTIONS.get(compression_key, compression_key)}",
-            f"What compression does: {COMPRESSION_HELP.get(compression_key, 'Controls how much raw code is kept.')}",
-            "",
-            "Decision Preview:",
-            f"- Estimated files selected: ~{estimated_files}" if snapshot else "- Estimated files selected: choose a project folder to calculate",
-            f"- Rough output tokens: {format_token_k(estimated_tokens)}" if snapshot else "- Rough output tokens: choose a project folder to calculate",
-            f"- Files scanned under current filters: {total_files}" if snapshot else "- Files scanned under current filters: unavailable until a folder is selected",
-            f"- Changed files detected: {changed_files}" if snapshot else "- Changed files detected: unavailable until a folder is selected",
-            "",
-            "Selection strategy:",
-            f"- Primary strategy: {MODE_HELP.get(mode_key, 'Controls how Contexta curates project files.')}",
-            f"- Focus impact: {'boosts scoring, ordering, excerpts, and related context' if focus_text else 'inactive until you provide a focus query'}",
-            f"- Diff impact: {'changed files and nearby context move up hard' if self._diff_var.get() else 'git changes are only a background signal unless diff mode is enabled'}",
-            "",
-            "Compression comparison:",
-            f"- Full: {format_token_k(full_tokens)}",
-            f"- Balanced: {format_token_k(balanced_tokens)}",
-            f"- Focused: {format_token_k(focused_tokens)}",
-            f"- Signatures: {format_token_k(signatures_tokens)}",
-            f"- Reduction vs Full: {reduction_vs_full}%",
-            "- Token counts are rough and depend on context size, visible output, and model behavior.",
-            "",
-            "Likely sections in the export:",
-        ]
-        lines.extend(f"- {title}" for title in section_titles[:10])
-        if len(section_titles) > 10:
-            lines.append(f"- ...plus {len(section_titles) - 10} more section(s)")
-        lines.extend([
-            "",
-            "Model guidance snapshot:",
-        ])
-        lines.extend(f"- {line}" for line in guidance_lines[:8] if line.strip())
-        lines.extend([
-            "",
-            "Contexta will generate:",
-            "- Read This First and Main Flow guides before the payload",
-            "- File-by-file selection reasons and score clues for the most important files",
-            "- Project Summary with technologies, entry points, important files, architecture, and hotspots",
-            "- Relationship map between central files and likely related tests",
-            "- Changed Files + Context when git changes are present",
-            "- Suggested prompts and an AI handoff section for paste-ready use",
-            "- A compressed payload shaped for the selected task and AI target",
-        ])
-        if focus_text:
-            lines.append(f"- Extra focus on: {focus_text}")
-        if self._diff_var.get():
-            lines.append("- Git changes will be used as a strong signal during selection")
-        if custom_goal:
-            lines.extend(["", "Custom goal:", custom_goal])
+        if snapshot:
+            self._chip_scanned.set(f"{total_files}")
+            self._chip_selected.set(f"~{estimated_files}")
+            self._chip_tokens.set(format_token_k(estimated_tokens))
+        else:
+            self._chip_scanned.set("—")
+            self._chip_selected.set("—")
+            self._chip_tokens.set("—")
 
-        self._preview.configure(state="normal")
-        self._preview.delete("1.0", "end")
-        self._preview.insert("end", "\n".join(lines))
-        self._preview.configure(state="disabled")
+        focus_line = focus_text if focus_text else "Not set. Selection stays broad."
+        git_line = "Changed files and nearby context move up." if self._diff_var.get() else "Git changes stay a background signal."
+        blocks = [
+            ("kicker", "PACK\n"),
+            ("title", f"{PACK_OPTIONS.get(pack_key, 'Custom pack')}\n"),
+            ("body", f"{PACK_HELP.get(pack_key, 'Custom workflow.')}\n"),
+            ("kicker", "SELECTION\n"),
+            ("strong", f"{CONTEXT_MODE_OPTIONS.get(mode_key, mode_key)}\n"),
+            ("body", f"{MODE_HELP.get(mode_key, '')}\n"),
+            ("bullet", f"Focus     {focus_line}\n"),
+            ("bullet", f"Git       {git_line}\n"),
+            ("bullet", f"Changed   {changed_files if snapshot else '—'}\n"),
+            ("kicker", "OUTPUT\n"),
+            ("strong", f"{AI_PROFILE_OPTIONS.get(ai_key, ai_key)}\n"),
+            ("body", f"{AI_HELP.get(ai_key, '')}\n"),
+            ("strong", f"{TASK_PROFILE_OPTIONS.get(task_key, task_key)}\n"),
+            ("body", f"{TASK_HELP.get(task_key, '')}\n"),
+            ("strong", f"{COMPRESSION_OPTIONS.get(compression_key, compression_key)}\n"),
+            ("body", f"{COMPRESSION_HELP.get(compression_key, '')}\n"),
+            ("kicker", "TOKEN SHAPE\n"),
+            ("bullet", f"Full {format_token_k(full_tokens)}     Balanced {format_token_k(balanced_tokens)}     Focused {format_token_k(focused_tokens)}     Signatures {format_token_k(signatures_tokens)}\n"),
+            ("body", f"About {reduction_vs_full}% smaller than Full. These counts are rough.\n"),
+            ("kicker", "SECTIONS IN THE PACK\n"),
+        ]
+        for title in section_titles[:8]:
+            blocks.append(("bullet", f"{title}\n"))
+        if len(section_titles) > 8:
+            blocks.append(("body", f"{len(section_titles) - 8} more sections follow in the export.\n"))
+        notes = [line.strip() for line in guidance_lines if line.strip()]
+        if notes:
+            blocks.append(("kicker", "MODEL NOTES\n"))
+            for line in notes[:6]:
+                blocks.append(("bullet", f"{line.lstrip('-').strip()}\n"))
+        if custom_goal:
+            blocks.extend([("kicker", "CUSTOM GOAL\n"), ("body", custom_goal + "\n")])
+        self._write_tagged(self._preview, blocks)
+        if self._project_path or self._last_md or self._view_switch._current == "result":
+            self._show_reader()
+        else:
+            self._show_empty_state()
+
+    def _configure_preview_tags(self):
+        sans = FS[0]
+        self._preview.tag_configure("kicker", font=(sans, 9, "bold"), foreground=C["accent"], spacing1=12, spacing3=2)
+        self._preview.tag_configure("title", font=(sans, 14, "bold"), foreground=C["text"], spacing3=3)
+        self._preview.tag_configure("strong", font=(sans, 10, "bold"), foreground=C["text"], spacing1=6, spacing3=1)
+        self._preview.tag_configure("body", font=FS, foreground=C["text2"], spacing3=2)
+        self._preview.tag_configure("bullet", font=FS, foreground=C["text"], spacing1=1, lmargin1=4, lmargin2=16)
+
+    def _configure_result_tags(self):
+        sans = FS[0]
+        self._result.tag_configure("h1", font=(sans, 16, "bold"), foreground=C["text"], spacing1=6, spacing3=8)
+        self._result.tag_configure("h2", font=(sans, 13, "bold"), foreground=C["text"], spacing1=12, spacing3=4)
+        self._result.tag_configure("h3", font=(sans, 11, "bold"), foreground=C["text2"], spacing1=8, spacing3=2)
+        self._result.tag_configure("body", font=FS, foreground=C["text2"], spacing3=1)
+        self._result.tag_configure("quote", font=FS, foreground=C["text3"], lmargin1=8)
+        self._result.tag_configure("code", font=FM, foreground=C["text2"], lmargin1=12, lmargin2=12)
+        self._result.tag_configure("empty_title", font=(sans, 13, "bold"), foreground=C["text"], spacing3=4)
+        self._result.tag_configure("empty_body", font=FS, foreground=C["text2"])
+
+    def _configure_log_tags(self):
+        for tag, color_key in (("ok", "green"), ("warn", "amber"), ("err", "red"), ("info", "accent"), ("muted", "text3")):
+            self._log.tag_configure(tag, foreground=C[color_key])
+
+    def _write_tagged(self, widget, blocks: list[tuple[str, str]]):
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        for tag, text in blocks:
+            widget.insert("end", text, tag)
+        widget.configure(state="disabled")
+
+    def _show_empty_state(self):
+        self._empty_state.grid()
+        self._preview_shell.grid_remove()
+        self._result_shell.grid_remove()
+
+    def _show_reader(self):
+        self._empty_state.grid_remove()
+        if self._view_switch._current == "result":
+            self._preview_shell.grid_remove()
+            self._result_shell.grid()
+        else:
+            self._result_shell.grid_remove()
+            self._preview_shell.grid()
+
+    def _set_view(self, key: str):
+        if not self._project_path and not self._last_md and key == "preview":
+            self._show_empty_state()
+            return
+        if key == "result" and not self._last_md:
+            self._render_result_placeholder()
+        self._show_reader()
+
+    def _render_result_placeholder(self):
+        self._result_meta.configure(text="Nothing exported yet")
+        self._write_tagged(
+            self._result,
+            [
+                ("empty_title", "No pack yet\n"),
+                ("empty_body", "Create a context pack and the Markdown will open here, ready to read or copy.\n"),
+            ],
+        )
+
+    def _show_result(self, markdown: str, out_file: Path):
+        self._last_output = out_file
+        lines = markdown.splitlines()
+        shown = lines[:180]
+        size_kb = max(len(markdown.encode("utf-8")), 1) / 1024
+        meta = f"{out_file}      {len(lines)} lines      {size_kb:.1f} KB"
+        if len(lines) > len(shown):
+            meta += "      first 180 lines"
+        self._result_meta.configure(text=meta)
+        self._result.configure(state="normal")
+        self._result.delete("1.0", "end")
+        in_code = False
+        for line in shown:
+            if line.startswith("```"):
+                in_code = not in_code
+                self._result.insert("end", line + "\n", "code")
+                continue
+            if in_code:
+                tag = "code"
+            elif line.startswith("# "):
+                tag = "h1"
+                line = line[2:]
+            elif line.startswith("## "):
+                tag = "h2"
+                line = line[3:]
+            elif line.startswith("### "):
+                tag = "h3"
+                line = line[4:]
+            elif line.startswith(">"):
+                tag = "quote"
+            else:
+                tag = "body"
+            self._result.insert("end", line + "\n", tag)
+        self._result.configure(state="disabled")
+        self._result.see("1.0")
+        self._view_switch.set("result")
+        self._show_reader()
+
+    def _paint_status(self):
+        bg_key, fg_key = self._status_pair
+        background = C[bg_key]
+        foreground = C[fg_key]
+        if contrast_ratio(foreground, background) < 4.5:
+            foreground = readable_fg(background)
+        self._status.configure(text=self._status_text, bg=background, fg=foreground)
+
+    def _banner_colors(self):
+        tone = self._banner_tone or "err"
+        return {
+            "err": ("danger_soft", "red"),
+            "warn": ("warn_soft", "amber"),
+            "ok": ("ok_soft", "green"),
+        }[tone]
+
+    def _paint_banner(self):
+        bg_key, fg_key = self._banner_colors()
+        self._banner.configure(bg=C[bg_key])
+        self._banner_label.configure(text=self._banner_text, bg=C[bg_key], fg=C[fg_key])
+        self._banner_dismiss.configure(bg=C[bg_key], fg=C[fg_key])
+
+    def _show_banner(self, text: str, tone: str = "err"):
+        self._banner_text = text
+        self._banner_tone = tone
+        self._paint_banner()
+        if not self._banner.winfo_ismapped():
+            self._banner.pack(fill="x", before=self._footer)
+
+    def _hide_banner(self):
+        self._banner_tone = None
+        self._banner_text = ""
+        if self._banner.winfo_ismapped():
+            self._banner.pack_forget()
+
+    def _show_error(self, message: str):
+        self._set_status("Error", "danger_soft", "red")
+        self._show_banner(message, "err")
 
     def _toggle_theme(self):
         toggle_theme()
         self._refresh_ttk()
         ThemeRegistry.repaint()
         self.configure(bg=C["bg"])
+        self._configure_preview_tags()
+        self._configure_result_tags()
+        self._configure_log_tags()
+        self._paint_status()
+        if self._banner_tone:
+            self._paint_banner()
         self._refresh_preview()
-        for tag, color_key in (("ok", "green"), ("warn", "amber"), ("err", "red"), ("info", "accent"), ("muted", "text3")):
-            self._log.tag_config(tag, foreground=C[color_key])
         if self._help_window and self._help_window.winfo_exists():
             self._render_help()
 
@@ -1113,21 +1582,26 @@ class App(tk.Tk):
         self._preview_snapshot = None
         self._path_var.set(str(self._project_path))
         self._btn_generate.configure(state="normal")
+        self._hide_banner()
         self._log_clear()
-        self._log_write(f"Project folder selected: {self._project_path}", "info")
+        self._log_write(f"Project folder selected: {self._project_path.name}", "info")
         self._set_status(self._project_path.name, "tag_bg", "tag_fg")
+        self._view_switch.set("preview")
         self._refresh_preview()
 
     def _start(self):
         if self._running or not self._project_path:
             return
         self._running = True
-        self._btn_generate.configure(state="disabled", text="Creating Pack...")
+        self._hide_banner()
+        self._btn_generate.configure(state="disabled", text="Creating…")
         self._btn_pick.configure(state="disabled")
         self._btn_copy.configure(state="disabled")
-        self._progress.start(10)
+        self._progress.grid()
+        self._progress.start(12)
         self._log_clear()
-        self._set_status("Working", "accent", "white")
+        self._log_write("Reading the project…", "info")
+        self._set_status("Working", "accent", "ink")
         threading.Thread(target=self._worker, daemon=True).start()
 
     def _worker(self):
@@ -1154,31 +1628,37 @@ class App(tk.Tk):
             out_file.write_text(markdown, encoding="utf-8")
             self.after(0, lambda: self._finish_success(markdown, out_file, self._copy_var.get()))
         except Exception as exc:
-            self._log_write(f"Error: {exc}", "err")
-            self.after(0, lambda: self._set_status("Error", "red", "white"))
-            self.after(0, lambda: messagebox.showerror("Contexta", str(exc)))
+            message = str(exc)
+            self._log_write(f"Error: {message}", "err")
+            self.after(0, lambda m=message: self._show_error(m))
         finally:
             self._running = False
-            self.after(0, self._progress.stop)
-            self.after(0, lambda: self._btn_generate.configure(state="normal", text="Create Context Pack"))
+            self.after(0, self._hide_progress)
+            self.after(0, lambda: self._btn_generate.configure(state="normal", text="Create context pack"))
             self.after(0, lambda: self._btn_pick.configure(state="normal"))
+
+    def _hide_progress(self):
+        self._progress.stop()
+        self._progress.grid_remove()
 
     def _finish_success(self, markdown: str, out_file: Path, copy_requested: bool):
         self._last_md = markdown
         if copy_requested:
             self._do_copy(markdown)
-            self._log_write("Copied latest pack to clipboard.", "ok")
+            self._log_write("Copied the pack to the clipboard.", "ok")
         self._log_write(f"Saved: {out_file}", "ok")
         self._btn_copy.configure(state="normal")
-        self._set_status("Ready", "green", "white")
-        messagebox.showinfo("Contexta", f"Context pack created at:\n\n{out_file}")
+        self._set_status("Ready", "ok_soft", "green")
+        self._show_result(markdown, out_file)
 
     def _copy_to_clipboard(self):
         if not self._last_md:
-            messagebox.showwarning("Contexta", "Create a context pack first.")
+            self._show_banner("Create a context pack first.", "warn")
             return
         self._do_copy(self._last_md)
-        self._set_status("Copied", "green", "white")
+        self._hide_banner()
+        self._set_status("Copied", "ok_soft", "green")
+        self._log_write("Copied the latest pack.", "ok")
 
     def _do_copy(self, text: str):
         self.clipboard_clear()
@@ -1186,7 +1666,9 @@ class App(tk.Tk):
         self.update()
 
     def _set_status(self, text: str, bg_key: str, fg_key: str):
-        self._status.configure(text=text, bg=C[bg_key], fg=C[fg_key])
+        self._status_text = text if len(text) <= 32 else text[:31] + "…"
+        self._status_pair = (bg_key, fg_key)
+        self._paint_status()
 
     def _log_clear(self):
         self._log.configure(state="normal")
@@ -1195,8 +1677,9 @@ class App(tk.Tk):
 
     def _log_write(self, msg: str, tag: str = ""):
         def _write():
+            marks = {"ok": "✓  ", "warn": "!  ", "err": "×  ", "info": "·  ", "muted": "·  "}
             self._log.configure(state="normal")
-            self._log.insert("end", msg + "\n", tag)
+            self._log.insert("end", marks.get(tag, "") + msg + "\n", tag or "muted")
             self._log.see("end")
             self._log.configure(state="disabled")
 
@@ -1248,10 +1731,12 @@ class App(tk.Tk):
         text_shell.grid_rowconfigure(0, weight=1)
         reg(text_shell, lambda w: w.configure(bg=C["card"], highlightbackground=C["border"]))
 
-        guide = tk.Text(text_shell, font=FS, bg=C["card"], fg=C["text"], relief="flat", bd=0, wrap="word", padx=16, pady=16)
+        guide = tk.Text(text_shell, font=FS, bg=C["card"], fg=C["text2"], relief="flat", bd=0, wrap="word", padx=18, pady=16, spacing3=2)
         guide.grid(row=0, column=0, sticky="nsew")
         guide.configure(insertbackground=C["accent"])
-        reg(guide, lambda w: w.configure(bg=C["card"], fg=C["text"], insertbackground=C["accent"]))
+        guide.tag_configure("h", font=FL, foreground=C["text"], spacing1=12, spacing3=4)
+        guide.tag_configure("b", font=FS, foreground=C["text2"])
+        reg(guide, lambda w: w.configure(bg=C["card"], fg=C["text2"], insertbackground=C["accent"]))
         scroll = ttk.Scrollbar(text_shell, orient="vertical", command=guide.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         guide.configure(yscrollcommand=scroll.set)
@@ -1271,13 +1756,50 @@ class App(tk.Tk):
         ]
 
         for heading, body in sections:
-            guide.insert("end", heading + "\n")
-            guide.insert("end", body + "\n\n")
+            guide.insert("end", heading + "\n", "h")
+            guide.insert("end", body + "\n\n", "b")
 
         guide.configure(state="disabled")
 
         close_row = tk.Frame(shell, bg=C["bg"])
         close_row.pack(fill="x", pady=(12, 0))
         reg(close_row, lambda w: w.configure(bg=C["bg"]))
-        close_btn = FlatBtn(close_row, "Close Guide", "accent_dk", self._help_window.destroy, font=FBS, surface_key="bg")
+        close_btn = FlatBtn(close_row, "Close", "accent", self._help_window.destroy, font=FBS, surface_key="bg", variant="ghost")
         close_btn.pack(anchor="e")
+
+    def _get_mcp_entry(self) -> dict:
+        mcp_script = Path(__file__).resolve().parent.parent / "contexta_mcp.py"
+        python_cmd = sys.executable
+        return {
+            "command": python_cmd.replace("\\", "/"),
+            "args": [str(mcp_script).replace("\\", "/")],
+        }
+
+    def _write_mcp_config(self, config_path: Path, editor_name: str):
+        import json
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if config_path.exists():
+            try:
+                existing = json.loads(config_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        if "mcpServers" not in existing:
+            existing["mcpServers"] = {}
+        existing["mcpServers"]["contexta"] = self._get_mcp_entry()
+        config_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+        self._log_write(f"MCP configured for {editor_name}: {config_path}", "ok")
+        messagebox.showinfo("Contexta", f"MCP server configured for {editor_name}.\n\nConfig: {config_path}\n\nRestart {editor_name} to activate.")
+
+    def _setup_claude_code(self):
+        config_path = Path.home() / ".claude" / ".mcp.json"
+        self._write_mcp_config(config_path, "Claude Code")
+
+    def _setup_cursor(self):
+        config_path = Path.home() / ".cursor" / "mcp.json"
+        self._write_mcp_config(config_path, "Cursor")
+
+    def _setup_windsurf(self):
+        config_path = Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
+        self._write_mcp_config(config_path, "Windsurf")

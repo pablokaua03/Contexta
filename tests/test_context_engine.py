@@ -28,10 +28,9 @@ from contexta_app.context_engine import (
     pick_core_module_labels,
     pick_core_module_names,
     summarize_file,
-    test_relation_score,
+    related_test_score,
 )
 from contexta_app.scanner import build_tree
-from contexta_app.ui import resolve_pack_focus
 
 
 class TestAnalysisHeuristics(unittest.TestCase):
@@ -129,7 +128,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_renderer_summary_wins_over_analysis_overlap(self):
         item = self._insight(
-            "renderer.py",
+            "contexta_app/renderer.py",
             "\n".join([
                 "from context_engine import build_analysis",
                 "",
@@ -143,7 +142,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_context_engine_keeps_analysis_summary(self):
         item = self._insight(
-            "context_engine.py",
+            "contexta_app/context_engine.py",
             "\n".join([
                 "class ProjectAnalysis:",
                 "    pass",
@@ -161,7 +160,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_theme_summary_wins_over_generic_ui_summary(self):
         item = self._insight(
-            "theme.py",
+            "contexta_app/theme.py",
             "\n".join([
                 "import tkinter as tk",
                 "",
@@ -199,7 +198,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
         self.assertEqual(summary, "Acts as the main entrypoint that routes execution into the GUI or CLI flow.")
 
     def test_syntax_summary_mentions_tree_sitter_role(self):
-        item = self._insight("syntax.py", "from tree_sitter_language_pack import get_parser\n")
+        item = self._insight("contexta_app/syntax.py", "from tree_sitter_language_pack import get_parser\n")
         summary = summarize_file(item, {})
         self.assertIn("syntax-aware symbols", summary.lower())
         self.assertIn("tree-sitter", summary.lower())
@@ -818,7 +817,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_context_engine_role_stays_analysis_engine(self):
         item = self._insight(
-            "context_engine.py",
+            "contexta_app/context_engine.py",
             "\n".join([
                 "from scanner import get_language",
                 "",
@@ -1192,7 +1191,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_compute_risk_score_does_not_mark_context_engine_as_input_flow(self):
         item = self._insight(
-            "context_engine.py",
+            "contexta_app/context_engine.py",
             "def build_analysis():\n    return None\n\ndef build_task_prompt():\n    return 'submit the pack summary'\n",
         )
         risk = compute_risk_score(item, [item], set(), {})
@@ -1439,7 +1438,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
 
     def test_normal_source_excerpt_keeps_dense_import_lines(self):
         item = self._insight(
-            "renderer.py",
+            "contexta_app/renderer.py",
             "from context_engine import APP_NAME, AI_PROFILE_OPTIONS, COMPRESSION_OPTIONS, CONTEXT_MODE_OPTIONS, PACK_OPTIONS, TASK_PROFILE_OPTIONS, ExportConfig, build_analysis, extract_relevant_excerpt, extract_signatures\n",
         )
         excerpt, reason = extract_relevant_excerpt(item, "")
@@ -1468,7 +1467,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
                 "    assert read_file_safe('x')[1] is False",
             ]),
         )
-        self.assertGreaterEqual(test_relation_score(item, candidate), 3)
+        self.assertGreaterEqual(related_test_score(item, candidate), 3)
 
     def test_summary_lists_only_selected_tests(self):
         (self.tmp / "contexta.py").write_text("__name__ = '__main__'\n", encoding="utf-8")
@@ -1603,18 +1602,6 @@ class TestAnalysisHeuristics(unittest.TestCase):
         )
         relpaths = [item.relpath.as_posix() for item in analysis.selected_files]
         self.assertIn("orphan_helper.py", relpaths)
-
-    def test_pack_focus_switch_replaces_previous_auto_value(self):
-        focus, auto = resolve_pack_focus("", "", "backend api server")
-        self.assertEqual((focus, auto), ("backend api server", "backend api server"))
-
-        focus, auto = resolve_pack_focus(focus, auto, "frontend ui screen")
-        self.assertEqual((focus, auto), ("frontend ui screen", "frontend ui screen"))
-
-    def test_pack_focus_switch_preserves_manual_value(self):
-        focus, auto = resolve_pack_focus("custom auth flow", "backend api server", "frontend ui screen")
-        self.assertEqual((focus, auto), ("custom auth flow", "backend api server"))
-
 
     # ------------------------------------------------------------------
     # New detection tests: real-world project scenarios

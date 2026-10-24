@@ -1,0 +1,298 @@
+{
+  "meta": {
+    "python": "3.13.5",
+    "platform": "Linux-6.12.94+-x86_64-with-glibc2.41",
+    "cpus": 8,
+    "repomix": "1.18.1",
+    "gitingest": "0.3.1",
+    "budget": 20000,
+    "reps": 3,
+    "commits": {
+      "flask": "d086db856be187255b8ec61ef409357393020f32",
+      "requests": "611c6162cbc4ac2020a2f91c7cfa4f3abf9bbb60",
+      "fastapi": "7a0a3f0b286c6c865cf4398ea0e957a87b8bffa4"
+    }
+  },
+  "rows": [
+    {
+      "repo": "flask",
+      "tool": "contexta (default)",
+      "error": "",
+      "tokens": 168126,
+      "bytes": 724141,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.93,
+      "time_first": 1.1
+    },
+    {
+      "repo": "flask",
+      "tool": "contexta --budget 20k --focus",
+      "error": "",
+      "tokens": 8356,
+      "bytes": 37265,
+      "recall": 3,
+      "expected": 4,
+      "missing": [
+        "src/flask/ctx.py"
+      ],
+      "time_median": 0.57,
+      "time_first": 0.79
+    },
+    {
+      "repo": "flask",
+      "tool": "contexta --budget 20k --focus --no-graph",
+      "error": "",
+      "tokens": 17174,
+      "bytes": 75825,
+      "recall": 3,
+      "expected": 4,
+      "missing": [
+        "src/flask/ctx.py"
+      ],
+      "time_median": 0.56,
+      "time_first": 0.54
+    },
+    {
+      "repo": "flask",
+      "tool": "repomix (default)",
+      "error": "",
+      "tokens": 285568,
+      "bytes": 1198925,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.57,
+      "time_first": 0.58
+    },
+    {
+      "repo": "flask",
+      "tool": "repomix --compress",
+      "error": "",
+      "tokens": 228991,
+      "bytes": 921002,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.66,
+      "time_first": 0.66
+    },
+    {
+      "repo": "flask",
+      "tool": "repomix --compress --include src/flask/**",
+      "error": "",
+      "tokens": 53926,
+      "bytes": 224669,
+      "recall": 3,
+      "expected": 4,
+      "missing": [
+        "tests/test_session_interface.py"
+      ],
+      "time_median": 0.58,
+      "time_first": 0.58
+    },
+    {
+      "repo": "flask",
+      "tool": "gitingest (default)",
+      "error": "",
+      "tokens": 402444,
+      "bytes": 1475158,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.92,
+      "time_first": 0.92
+    },
+    {
+      "repo": "requests",
+      "tool": "contexta (default)",
+      "error": "",
+      "tokens": 71689,
+      "bytes": 305204,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.53,
+      "time_first": 0.7
+    },
+    {
+      "repo": "requests",
+      "tool": "contexta --budget 20k --focus",
+      "error": "",
+      "tokens": 17639,
+      "bytes": 80525,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.46,
+      "time_first": 0.59
+    },
+    {
+      "repo": "requests",
+      "tool": "contexta --budget 20k --focus --no-graph",
+      "error": "",
+      "tokens": 16597,
+      "bytes": 75985,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.43,
+      "time_first": 0.43
+    },
+    {
+      "repo": "requests",
+      "tool": "repomix (default)",
+      "error": "",
+      "tokens": 685407,
+      "bytes": 1372866,
+      "recall": 3,
+      "expected": 4,
+      "missing": [
+        "tests/test_requests.py"
+      ],
+      "time_median": 0.61,
+      "time_first": 0.55
+    },
+    {
+      "repo": "requests",
+      "tool": "repomix --compress",
+      "error": "",
+      "tokens": 663115,
+      "bytes": 1255590,
+      "recall": 2,
+      "expected": 4,
+      "missing": [
+        "src/requests/sessions.py",
+        "tests/test_requests.py"
+      ],
+      "time_median": 0.65,
+      "time_first": 0.64
+    },
+    {
+      "repo": "requests",
+      "tool": "repomix --compress --include src/requests/**",
+      "error": "",
+      "tokens": 32080,
+      "bytes": 124012,
+      "recall": 2,
+      "expected": 4,
+      "missing": [
+        "src/requests/sessions.py",
+        "tests/test_requests.py"
+      ],
+      "time_median": 0.58,
+      "time_first": 0.58
+    },
+    {
+      "repo": "requests",
+      "tool": "gitingest (default)",
+      "error": "",
+      "tokens": 170996,
+      "bytes": 684678,
+      "recall": 4,
+      "expected": 4,
+      "missing": [],
+      "time_median": 0.69,
+      "time_first": 0.69
+    },
+    {
+      "repo": "fastapi",
+      "tool": "contexta (default)",
+      "error": "",
+      "tokens": 2108026,
+      "bytes": 8394979,
+      "recall": 5,
+      "expected": 5,
+      "missing": [],
+      "time_median": 8.63,
+      "time_first": 10.41
+    },
+    {
+      "repo": "fastapi",
+      "tool": "contexta --budget 20k --focus",
+      "error": "",
+      "tokens": 17677,
+      "bytes": 86382,
+      "recall": 2,
+      "expected": 5,
+      "missing": [
+        "fastapi/params.py",
+        "fastapi/dependencies/models.py",
+        "tests/test_dependency_cache.py"
+      ],
+      "time_median": 1.43,
+      "time_first": 2.68
+    },
+    {
+      "repo": "fastapi",
+      "tool": "contexta --budget 20k --focus --no-graph",
+      "error": "",
+      "tokens": 17723,
+      "bytes": 86770,
+      "recall": 2,
+      "expected": 5,
+      "missing": [
+        "fastapi/params.py",
+        "fastapi/dependencies/models.py",
+        "tests/test_dependency_cache.py"
+      ],
+      "time_median": 3.56,
+      "time_first": 3.54
+    },
+    {
+      "repo": "fastapi",
+      "tool": "repomix (default)",
+      "error": "",
+      "tokens": 8869684,
+      "bytes": 24343707,
+      "recall": 5,
+      "expected": 5,
+      "missing": [],
+      "time_median": 1.3,
+      "time_first": 1.3
+    },
+    {
+      "repo": "fastapi",
+      "tool": "repomix --compress",
+      "error": "",
+      "tokens": 8215545,
+      "bytes": 20519356,
+      "recall": 4,
+      "expected": 5,
+      "missing": [
+        "fastapi/dependencies/utils.py"
+      ],
+      "time_median": 1.65,
+      "time_first": 1.57
+    },
+    {
+      "repo": "fastapi",
+      "tool": "repomix --compress --include fastapi/**",
+      "error": "",
+      "tokens": 42527,
+      "bytes": 169567,
+      "recall": 2,
+      "expected": 5,
+      "missing": [
+        "fastapi/dependencies/utils.py",
+        "fastapi/routing.py",
+        "tests/test_dependency_cache.py"
+      ],
+      "time_median": 0.67,
+      "time_first": 0.74
+    },
+    {
+      "repo": "fastapi",
+      "tool": "gitingest (default)",
+      "error": "",
+      "tokens": 4373871,
+      "bytes": 16557735,
+      "recall": 5,
+      "expected": 5,
+      "missing": [],
+      "time_median": 4.87,
+      "time_first": 4.94
+    }
+  ]
+}

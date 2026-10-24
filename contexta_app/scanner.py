@@ -5,12 +5,15 @@ scanner.py - Project scanning, filtering, .gitignore support, git diff.
 from __future__ import annotations
 
 import fnmatch
+import os
 import subprocess
 from functools import lru_cache
 from pathlib import Path
 
 from charset_normalizer import from_bytes
 from pathspec import PathSpec
+
+from contexta_app.safety import is_sensitive_path
 
 
 CODE_EXTENSIONS: dict[str, str] = {
@@ -95,6 +98,7 @@ CODE_EXTENSIONS: dict[str, str] = {
 
 IGNORE_DIRS: set[str] = {
     ".git",
+    ".contexta",
     ".svn",
     ".hg",
     ".bzr",
@@ -179,7 +183,25 @@ IGNORE_SUFFIXES: tuple[str, ...] = (
 )
 
 MAX_FILE_LINES = 1_000
-MAX_TOTAL_FILES = 2_000
+DEFAULT_MAX_FILES = 2_000
+MAX_TOTAL_FILES = DEFAULT_MAX_FILES  # kept for callers that import the old name
+
+
+def resolve_max_files(value: int | None = None) -> int:
+    """File cap for a scan: explicit value, then CONTEXTA_MAX_FILES, then the default."""
+    if value is not None:
+        if value <= 0:
+            raise ValueError("max files must be a positive integer")
+        return value
+    raw = os.environ.get("CONTEXTA_MAX_FILES", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            parsed = 0
+        if parsed > 0:
+            return parsed
+    return DEFAULT_MAX_FILES
 
 
 def get_language(filepath: Path) -> str | None:
@@ -189,20 +211,78 @@ def get_language(filepath: Path) -> str | None:
     return CODE_EXTENSIONS.get(filepath.suffix.lower())
 
 
-def load_gitignore_patterns(root: Path) -> list[str]:
-    """Read .gitignore at project root and return raw gitwildmatch patterns."""
-    gitignore = root / ".gitignore"
-    if not gitignore.is_file():
+class GitError(Exception):
+    """Git context was requested but cannot be collected."""
+
+
+class GitRefError(GitError):
+    def __init__(self, ref: str):
+        self.ref = ref
+        super().__init__(
+            f"Git ref '{ref}' was not found. "
+            "Check the branch name, or pass a remote ref such as origin/main."
+        )
+
+
+def _read_ignore_file(path: Path) -> list[str]:
+    if not path.is_file():
         return []
     patterns: list[str] = []
     try:
-        for line in gitignore.read_text(encoding="utf-8", errors="ignore").splitlines():
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
                 patterns.append(line)
     except Exception:
         pass
     return patterns
+
+
+def load_gitignore_patterns(root: Path) -> list[str]:
+    """Return ignore rules from .gitignore, .contextaignore, and contexta.toml.
+
+    ``.contextaignore`` and the config ``ignore`` list use gitignore syntax and
+    are applied after ``.gitignore``, so a later ``!`` rule can un-ignore a path.
+    """
+    patterns = _read_ignore_file(root / ".gitignore")
+    patterns.extend(_read_ignore_file(root / ".contextaignore"))
+    from contexta_app.config import project_ignore_patterns
+
+    patterns.extend(project_ignore_patterns(root))
+    return patterns
+
+
+def git_state(root: Path) -> str:
+    """Return ``ok``, ``missing-git``, or ``not-repo``."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return "missing-git"
+    except subprocess.TimeoutExpired:
+        return "not-repo"
+    if result.returncode != 0 or result.stdout.strip() != "true":
+        return "not-repo"
+    return "ok"
+
+
+def git_ref_exists(root: Path, ref: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", ref],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 @lru_cache(maxsize=16)
@@ -279,31 +359,38 @@ def matches_gitignore(path: Path, root: Path, patterns: list[str]) -> bool:
     return ignored
 
 
-def get_git_changed_files(root: Path, staged_only: bool = False) -> list[Path] | None:
+def get_git_changed_files(
+    root: Path,
+    staged_only: bool = False,
+    base_ref: str | None = None,
+) -> list[Path] | None:
     """
-    Return list of changed files via git diff.
-    Returns None if not a git repo or git is unavailable.
+    Return changed files via git diff.
+
+    ``base_ref`` compares the branch to that ref (three-dot, merge-base) and
+    also includes uncommitted work. Raises GitRefError when the ref does not
+    exist. Returns None if this is not a git repo or git is unavailable.
     """
     try:
-        inside_work_tree = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if inside_work_tree.returncode != 0 or inside_work_tree.stdout.strip() != "true":
+        if git_state(root) != "ok":
             return None
-
-        commands = (
-            [["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"]]
-            if staged_only
-            else [
+        if base_ref:
+            if not git_ref_exists(root, base_ref):
+                raise GitRefError(base_ref)
+            commands = [
+                ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base_ref}...HEAD"],
                 ["git", "diff", "--name-only", "--diff-filter=ACMR"],
                 ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
                 ["git", "ls-files", "--others", "--exclude-standard"],
             ]
-        )
+        elif staged_only:
+            commands = [["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"]]
+        else:
+            commands = [
+                ["git", "diff", "--name-only", "--diff-filter=ACMR"],
+                ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+                ["git", "ls-files", "--others", "--exclude-standard"],
+            ]
 
         changed_relpaths: set[str] = set()
         for cmd in commands:
@@ -328,6 +415,8 @@ def get_git_changed_files(root: Path, staged_only: bool = False) -> list[Path] |
             if path.is_file():
                 files.append(path)
         return files
+    except GitRefError:
+        raise
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
@@ -391,6 +480,12 @@ def should_ignore_file(
     gitignore_patterns: list[str] | None = None,
 ) -> bool:
     name = path.name
+    try:
+        relative = path.relative_to(root) if root else Path(name)
+    except ValueError:
+        relative = Path(name)
+    if is_sensitive_path(relative):
+        return True
     if not include_hidden and name.startswith("."):
         return True
     if name in IGNORE_FILES:
@@ -405,6 +500,34 @@ def should_ignore_file(
     return False
 
 
+_LOW_VALUE_DIRS = frozenset({"docs", "doc", "docs_src", "examples", "example", "samples", "sample", "demo", "demos", "tutorial", "tutorials", "benchmarks", "translations", "locale", "locales", "i18n"})
+_TEST_DIR_NAMES = frozenset({"tests", "test", "__tests__", "spec", "specs"})
+
+
+def _scan_tier(entry: Path) -> int:
+    """When the file cap is hit, application code should be scanned before docs and examples."""
+    name = entry.name.lower()
+    if name in _LOW_VALUE_DIRS:
+        return 2
+    if name in _TEST_DIR_NAMES:
+        return 1
+    return 0
+
+
+def _symlink_stays_inside(entry: Path, project_root: Path) -> bool:
+    """A symlink is followed only when its target is inside the project folder."""
+    try:
+        target = entry.resolve()
+        base = project_root.resolve()
+    except (OSError, RuntimeError):
+        return False
+    try:
+        target.relative_to(base)
+        return True
+    except ValueError:
+        return False
+
+
 def build_tree(
     root: Path,
     include_hidden: bool,
@@ -413,27 +536,38 @@ def build_tree(
     counter: list[int],
     gitignore_patterns: list[str],
     project_root: Path,
+    max_files: int | None = None,
 ) -> dict:
-    """Recursively build a tree dict of the project."""
+    """Recursively build a tree dict of the project.
+
+    The scan stops after ``max_files`` files (default 2000, or CONTEXTA_MAX_FILES).
+    """
+    limit = resolve_max_files(max_files)
     node: dict = {"name": root.name, "path": root, "dirs": [], "files": []}
 
     try:
-        entries = sorted(root.iterdir(), key=lambda entry: (entry.is_file(), entry.name.lower()))
+        entries = sorted(root.iterdir(), key=lambda entry: (entry.is_file(), _scan_tier(entry), entry.name.lower()))
     except PermissionError:
         log_cb(f"Permission denied: {root}", "warn")
         return node
 
     for entry in entries:
-        if counter[0] >= MAX_TOTAL_FILES:
-            log_cb(f"Reached {MAX_TOTAL_FILES}-file limit. Scan stopped.", "warn")
+        if counter[0] >= limit:
+            if len(counter) == 1:  # say it once, not once per folder on the way back up
+                counter.append(1)
+                log_cb(f"Reached {limit}-file limit. Scan stopped. Raise it with --max-files.", "warn")
+            node["dirs"].sort(key=lambda sub: sub["name"].lower())
             return node
+
+        if entry.is_symlink() and not _symlink_stays_inside(entry, project_root):
+            continue
 
         if entry.is_dir():
             if should_ignore_dir(entry.name, include_hidden):
                 continue
             if gitignore_patterns and matches_gitignore(entry, project_root, gitignore_patterns):
                 continue
-            log_cb(f"Scanning directory: {entry.relative_to(root.parent)}", "muted")
+            log_cb(f"Scanning directory: {entry.relative_to(project_root).as_posix()}", "muted")
             node["dirs"].append(
                 build_tree(
                     entry,
@@ -443,6 +577,7 @@ def build_tree(
                     counter,
                     gitignore_patterns,
                     project_root,
+                    limit,
                 )
             )
             continue
@@ -466,6 +601,7 @@ def build_tree(
             }
         )
 
+    node["dirs"].sort(key=lambda sub: sub["name"].lower())  # display order stays alphabetical
     return node
 
 

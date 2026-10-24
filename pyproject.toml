@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "contexta-ai"
-version = "2.0.0"
+version = "2.2.0"
 description = "AI-native codebase context engine. Scans projects and serves intelligent context packs to Claude Code, Cursor, Windsurf, and any MCP-compatible tool."
 readme = "README.md"
 license = "MIT"
@@ -25,8 +25,6 @@ dependencies = [
     "pathspec>=0.12,<1.1",
     "charset-normalizer>=3.4,<4",
     "tiktoken>=0.12,<1",
-    "tree-sitter>=0.25,<0.26",
-    "tree-sitter-language-pack>=1.6,<2",
     "rapidfuzz>=3.14,<4",
     "mcp[cli]>=1.9,<2",
 ]
@@ -36,7 +34,12 @@ claude = ["anthropic>=0.52,<1"]
 gemini = ["google-genai>=1.14,<2"]
 openai = ["openai>=1.82,<2"]
 all-ai = ["anthropic>=0.52,<1", "google-genai>=1.14,<2", "openai>=1.82,<2"]
-gui = []
+# Better symbol maps for JS/TS/Go/Rust. Without it a regex fallback is used (Python always uses ast).
+syntax = ["tree-sitter>=0.25,<0.26", "tree-sitter-language-pack>=1.6,<2"]
+# Desktop GUI: Tk ships with Python and cannot be installed with pip (apt install python3-tk on Debian/Ubuntu).
+# The CLI, graph and MCP server never import it. This extra installs the parsers for full-fidelity packs from the GUI.
+gui = ["tree-sitter>=0.25,<0.26", "tree-sitter-language-pack>=1.6,<2"]
+everything = ["tree-sitter>=0.25,<0.26", "tree-sitter-language-pack>=1.6,<2", "anthropic>=0.52,<1", "google-genai>=1.14,<2", "openai>=1.82,<2"]
 
 [project.scripts]
 contexta = "contexta:main"

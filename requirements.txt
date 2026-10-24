@@ -1,6 +1,7 @@
 pathspec>=0.12,<1.1
 charset-normalizer>=3.4,<4
 tiktoken>=0.12,<1
+# Bundled in the binary builds. Optional when installing from PyPI (extra: syntax).
 tree-sitter>=0.25,<0.26
 tree-sitter-language-pack>=1.6,<2
 rapidfuzz>=3.14,<4

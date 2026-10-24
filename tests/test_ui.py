@@ -97,18 +97,31 @@ class TestUiHelpers(unittest.TestCase):
         self.assertTrue(can_scroll_target(FakeScrollable((0.0, 0.8)), 1))
 
     @patch("contexta_app.ui.sys.platform", "win32")
-    @patch("contexta_app.ui._icon_path", return_value=Path(r"C:\laragon\www\contexta\dist\icon.ico"))
-    @patch("contexta_app.ui.sys.executable", r"C:\laragon\www\contexta\dist\contexta.exe")
+    @patch("contexta_app.ui._icon_path", return_value=Path(r"C:\apps\contexta\dist\icon.ico"))
+    @patch("contexta_app.ui.sys.executable", r"C:\apps\contexta\dist\contexta.exe")
     def test_window_icon_source_prefers_icon_file_when_available(self, _mock_icon_path):
         with patch.object(sys, "frozen", True, create=True):
-            self.assertEqual(_window_icon_source(), r"C:\laragon\www\contexta\dist\icon.ico")
+            self.assertEqual(_window_icon_source(), r"C:\apps\contexta\dist\icon.ico")
 
     @patch("contexta_app.ui.sys.platform", "win32")
     @patch("contexta_app.ui._icon_path", return_value=None)
-    @patch("contexta_app.ui.sys.executable", r"C:\laragon\www\contexta\dist\contexta.exe")
+    @patch("contexta_app.ui.sys.executable", r"C:\apps\contexta\dist\contexta.exe")
     def test_window_icon_source_falls_back_to_executable_for_frozen_windows_build(self, _mock_icon_path):
         with patch.object(sys, "frozen", True, create=True):
-            self.assertEqual(_window_icon_source(), r"C:\laragon\www\contexta\dist\contexta.exe")
+            self.assertEqual(_window_icon_source(), r"C:\apps\contexta\dist\contexta.exe")
+
+
+class TestPackFocus(unittest.TestCase):
+    def test_pack_focus_switch_replaces_previous_auto_value(self):
+        focus, auto = resolve_pack_focus("", "", "backend api server")
+        self.assertEqual((focus, auto), ("backend api server", "backend api server"))
+
+        focus, auto = resolve_pack_focus(focus, auto, "frontend ui screen")
+        self.assertEqual((focus, auto), ("frontend ui screen", "frontend ui screen"))
+
+    def test_pack_focus_switch_preserves_manual_value(self):
+        focus, auto = resolve_pack_focus("custom auth flow", "backend api server", "frontend ui screen")
+        self.assertEqual((focus, auto), ("custom auth flow", "backend api server"))
 
 
 if __name__ == "__main__":

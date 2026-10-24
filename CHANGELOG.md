@@ -6,6 +6,81 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [2.2.0] - 2026-10-24
+
+Contexta now remembers your project. A local graph of files, symbols, tests and git history answers
+"what does this change touch" and makes budgeted packs faster and better aimed.
+
+### Added
+- **Project graph** (`.contexta/graph.db`, SQLite, gitignored by default). Files, symbols and tests, with `imports`, `calls`, `tests` and git `cochange` edges. Updated incrementally by mtime and hash. Never stores file contents, credential files or authors, and signatures are redacted. `contexta graph update|status|clear|dependents|dependencies|impact|changed|hot|symbols|map|export`. Export as JSON (`contexta.graph.v1`), JSONL or Markdown. See [docs/graph.md](docs/graph.md)
+- **Graph-aware packs.** With `--budget`, graph rank and churn raise a file's priority. With `--focus`, the tests that cover the matching files come along. On repos over 800 files, a budgeted or focused run analyses the 400 highest-ranked source files plus their tests instead of all of them: FastAPI at `--budget 20000` takes 1.4 s warm instead of 3.6 s. `--no-graph` or `graph = false` turns it off, `CONTEXTA_GRAPH_DIR` moves it
+- **MCP v2 tools:** `repo_map`, `search_symbols`, `impacted_tests`, `graph_query` and `context_for(task, budget)`. `find_files` also searches file contents and symbol names, with redacted matches. All confined to the server roots
+- **Repo map.** A ranked map of files and symbols inside a token budget. Python uses `ast`; JavaScript, TypeScript, Go and Rust use tree-sitter when installed, with a regex fallback
+- **`contexta install cursor|claude|copilot|mcp`** writes agent rules or MCP config. Idempotent, merge-safe for existing JSON, never overwrites without `--force`, `--dry-run`
+- **`--for bugfix|review|onboard|refactor`** picks the pack. `review` compares against `origin/main`, `main`, `origin/master` or `master`, whichever exists. `--help` is regrouped, with a short usage line and examples
+- **GitHub Action** (`action.yml`): PR context with the diff, impacted tests and a redacted pack inside a token budget, as an artifact and an optional comment that updates in place. See [docs/github-action.md](docs/github-action.md)
+- **Benchmark** against Repomix and Gitingest on Flask, Requests and FastAPI: tokens, time and recall, with the places Contexta loses. `python benchmarks/bench.py`
+
+### Changed
+- `tree-sitter` is now optional: `pip install "contexta-ai[syntax]"`. Without it, non-Python languages use a regex scanner. The `gui` extra installs the same parsers (Tk ships with Python and cannot come from pip). `contexta` without Tk now explains how to install it instead of failing with a traceback
+- **Engine split.** `context_engine.py` (about 5,000 lines) is now `contexta_app/engine/`, 16 cohesive modules, and a facade that keeps every public name. Output is byte-identical
+- When the file cap is hit, application code is scanned first, then tests, then `docs` and `examples`. On FastAPI the 2,000-file cap used to cut off the `fastapi/` package and pack `docs_src` instead
+- When a file has more definitions than fit in a pack, the signature list keeps focus matches, then classes, then top-level functions, instead of the first 18 in file order. Focus stemming also matches `dependency` with `dependencies`
+- Contexta writes `.contexta/` in the project (it ignores itself) unless `--no-graph` or `graph = false` is set. It still never modifies your files
+
+### Fixed
+- "Scanning directory: assets/assets" repeated the folder name in the scan log
+- The pack date used a fixed Brazilian format. It is ISO now (`2026-10-24 15:29:18`)
+- The file-limit warning was printed once per folder on the way back up. It prints once
+
+## [2.1.0] - 2026-10-24
+
+This is a security and quality release. If you run the 2.0.0 MCP server, upgrade.
+
+### Security
+- **MCP root confinement** — the MCP server in 2.0.0 accepted any absolute path and could read any file the user could. Tools now read only inside `--root` (repeatable), `CONTEXTA_ROOT`, or the folder the server started in. Paths outside, `..` escapes, and symlinks that leave the project are refused. **Behavior change:** `contexta serve` without `--root` is limited to its working directory
+- **Credential files are never read** — `.env*`, private keys, `.npmrc`, `.netrc`, cloud and package-manager credential files are skipped by the scan and refused by `read_files`. `.env.example` style templates still work
+- **Redaction is complete** — 2.0.0 had no redaction in MCP `read_files` or in packs. Now a span-based engine covers known token formats, `password: ...` lines in JSON and YAML, and random-looking strings (high-entropy check, tuned for no false positives on Flask, Requests and FastAPI)
+- **`--dry-run`** lists file, line and rule of every value that would be redacted, never the value. `--format json` is supported
+- **Allowlist** — `redact_allow` in `contexta.toml`, or a `contexta:allow` / `pragma: allowlist secret` marker on the line
+- `--redact` and `--no-redact` now share one option and cannot be combined
+- The scanner no longer follows symlinks that point outside the project
+
+### Added
+- **`--budget N`** (alias `--max-tokens`) — picks files by score until the pack fits N tokens and lists what was left out in a "Token Budget" section. MCP `generate_context` takes `budget`
+- **`--focus` filters and ranks** — `--focus "session cookie signing"` on Flask returns 8 files (about 17k tokens) with `sessions.py` first, instead of the whole repo (about 165k)
+- **`--max-files`** — the 2000-file cap is configurable (also `max_files` in `contexta.toml`, `CONTEXTA_MAX_FILES`)
+- Banner, colors and status lines go to stderr, so `--stdout` carries only the pack
+- **Model token budgets** — every pack reports whether it fits the selected AI profile (GPT-4o, GPT-4.1, Claude Sonnet, Claude Opus, Gemini, Copilot Chat, and a generic long-context fallback)
+- **PR-aware diffs** — `--base main` (or `origin/main`) selects files changed since the merge-base, including uncommitted work
+- **Daily presets** — `bugfix` and `refactor` packs join the existing onboarding and PR review presets
+- **Project config** — `contexta.toml` / `.contexta.toml` for defaults, plus `.contextaignore` and an `ignore` list on top of `.gitignore`. `contexta --init` writes starters. User defaults live in `~/.contexta/config.toml`
+- **CLI handoff** — `--stdout` (and automatic stdout when piped), `--format json`, clipboard fallbacks for Wayland and X11, and errors that say what to run next
+
+### Fixed
+- **Wrong project descriptions** — a scanned project got Contexta's own text (Flask was "feeds, profiles, messaging", `cli.py` described Contexta's CLI). Descriptions now come from the project's own pyproject, package.json, Cargo.toml, composer.json, pubspec.yaml, or README
+- **Performance** — the related-test matching compared every file with every other. FastAPI went from 69 s to 5 s, Flask from 2.9 s to 0.7 s, with identical selection
+- GUI section subtitles were clipped on narrow cards
+- `python -m contexta_app.cli` now runs the CLI
+- Engine tests no longer need Tk; the production helper `test_relation_score` is now `related_test_score` (the old name remains as an alias) so pytest stops collecting it
+
+### Changed
+- Explicit CLI flags and project config now override pack presets. `--pack pr_review --compression lean` stays lean
+- The README now leads with "the right context, inside your token budget, safe by default"
+
+---
+
+## [2.0.0] - 2026-07-11
+
+### Added
+- **MCP server** — `contexta serve` exposes `scan_project`, `get_architecture`, `generate_context`, `find_files`, `read_files`, `list_packs`, `cache_status`, and `refresh_cache` to Claude Code, Cursor, Windsurf, and other MCP clients
+- **AI API integration** — `--ask` sends the pack and a question to Claude, Gemini, or OpenAI; `--configure-ai` stores keys locally
+- **Smart cache** — in-memory analysis cache with mtime-based invalidation (~2 ms on a hit)
+- **Raw files pack** — `raw_files` preset dumps path and content with no analysis
+- **PyPI package** — `pip install contexta-ai`, with a trusted-publisher release workflow
+
+---
+
 ## [1.6.0] - 2026-04-19
 
 ### Added
