@@ -1106,7 +1106,7 @@ def is_named_test_for(item: FileInsight, candidate: FileInsight) -> bool:
     return False
 
 
-def test_relation_score(item: FileInsight, candidate: FileInsight) -> int:
+def related_test_score(item: FileInsight, candidate: FileInsight) -> int:
     rel = candidate.relpath.as_posix().lower()
     if "test" not in rel:
         return 0
@@ -1151,8 +1151,21 @@ def test_relation_score(item: FileInsight, candidate: FileInsight) -> int:
     return score
 
 
+
+def test_relation_score(item: FileInsight, candidate: FileInsight) -> int:
+    """Backwards-compatible name for :func:`related_test_score`.
+
+    The ``test_`` prefix made pytest collect this production function, so the
+    real name is ``related_test_score``. Kept for external callers.
+    """
+    return related_test_score(item, candidate)
+
+
+test_relation_score.__test__ = False  # type: ignore[attr-defined]
+
+
 def is_related_test_for(item: FileInsight, candidate: FileInsight) -> bool:
-    return test_relation_score(item, candidate) >= 4
+    return related_test_score(item, candidate) >= 4
 
 
 def is_explicit_test_cover(item: FileInsight, candidate: FileInsight) -> bool:
@@ -1161,7 +1174,7 @@ def is_explicit_test_cover(item: FileInsight, candidate: FileInsight) -> bool:
         target = item.path.stem.lower()
         if not (cand.startswith("test_") and target in cand):
             return False
-    return test_relation_score(item, candidate) >= 4
+    return related_test_score(item, candidate) >= 4
 
 
 def summarize_doc_file(item: FileInsight) -> str:
@@ -4005,7 +4018,7 @@ def has_related_project_test(item: FileInsight, tests: list[FileInsight]) -> boo
     if "test" in item.tags:
         return False
     for candidate in tests:
-        if test_relation_score(item, candidate) >= 4:
+        if related_test_score(item, candidate) >= 4:
             return True
     return False
 
@@ -4558,7 +4571,7 @@ def infer_selection_reasons(
     if item.matched_focus:
         reasons.append("matched focus")
     if "test" in item.tags:
-        if any(test_relation_score(other, item) >= 4 for other in selected_files if "test" not in other.tags):
+        if any(related_test_score(other, item) >= 4 for other in selected_files if "test" not in other.tags):
             reasons.append("related test")
     if "docs" in item.tags:
         reasons.append("documentation")
@@ -4684,11 +4697,11 @@ def add_related_tests(
     related_targets = [lookup[rel] for rel in selected if rel in lookup and "test" not in lookup[rel].tags]
     ranked_tests = sorted(
         tests,
-        key=lambda candidate: max((test_relation_score(target, candidate) for target in related_targets), default=0),
+        key=lambda candidate: max((related_test_score(target, candidate) for target in related_targets), default=0),
         reverse=True,
     )
     for item in ranked_tests[:limit]:
-        best_score = max((test_relation_score(target, item) for target in related_targets), default=0)
+        best_score = max((related_test_score(target, item) for target in related_targets), default=0)
         if best_score >= min_score or (
             allow_token_fallback and any(token in item.relpath.as_posix().lower() for token in derive_selected_tokens(selected))
         ):
@@ -4931,11 +4944,11 @@ def select_diff_files(
     related_targets = [lookup[rel] for rel in selected if rel in lookup and "test" not in lookup[rel].tags]
     ranked_tests = sorted(
         tests,
-        key=lambda candidate: max((test_relation_score(target, candidate) for target in related_targets), default=0),
+        key=lambda candidate: max((related_test_score(target, candidate) for target in related_targets), default=0),
         reverse=True,
     )
     for item in ranked_tests[:4]:
-        best_score = max((test_relation_score(target, item) for target in related_targets), default=0)
+        best_score = max((related_test_score(target, item) for target in related_targets), default=0)
         if best_score >= 4:
             selected.add(item.relpath.as_posix())
 

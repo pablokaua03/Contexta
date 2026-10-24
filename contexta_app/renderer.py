@@ -25,7 +25,7 @@ from contexta_app.context_engine import (
     build_analysis,
     extract_relevant_excerpt,
     extract_signatures,
-    test_relation_score,
+    related_test_score,
 )
 from contexta_app.redaction import redact_secrets
 from contexta_app.scanner import (
@@ -596,7 +596,7 @@ def has_related_selected_test(item, selected_files) -> bool:
     for candidate in selected_files:
         if "test" not in candidate.tags:
             continue
-        if test_relation_score(item, candidate) >= 4:
+        if related_test_score(item, candidate) >= 4:
             return True
     return False
 

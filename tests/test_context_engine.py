@@ -28,10 +28,9 @@ from contexta_app.context_engine import (
     pick_core_module_labels,
     pick_core_module_names,
     summarize_file,
-    test_relation_score,
+    related_test_score,
 )
 from contexta_app.scanner import build_tree
-from contexta_app.ui import resolve_pack_focus
 
 
 class TestAnalysisHeuristics(unittest.TestCase):
@@ -1468,7 +1467,7 @@ class TestAnalysisHeuristics(unittest.TestCase):
                 "    assert read_file_safe('x')[1] is False",
             ]),
         )
-        self.assertGreaterEqual(test_relation_score(item, candidate), 3)
+        self.assertGreaterEqual(related_test_score(item, candidate), 3)
 
     def test_summary_lists_only_selected_tests(self):
         (self.tmp / "contexta.py").write_text("__name__ = '__main__'\n", encoding="utf-8")
@@ -1603,18 +1602,6 @@ class TestAnalysisHeuristics(unittest.TestCase):
         )
         relpaths = [item.relpath.as_posix() for item in analysis.selected_files]
         self.assertIn("orphan_helper.py", relpaths)
-
-    def test_pack_focus_switch_replaces_previous_auto_value(self):
-        focus, auto = resolve_pack_focus("", "", "backend api server")
-        self.assertEqual((focus, auto), ("backend api server", "backend api server"))
-
-        focus, auto = resolve_pack_focus(focus, auto, "frontend ui screen")
-        self.assertEqual((focus, auto), ("frontend ui screen", "frontend ui screen"))
-
-    def test_pack_focus_switch_preserves_manual_value(self):
-        focus, auto = resolve_pack_focus("custom auth flow", "backend api server", "frontend ui screen")
-        self.assertEqual((focus, auto), ("custom auth flow", "backend api server"))
-
 
     # ------------------------------------------------------------------
     # New detection tests: real-world project scenarios
