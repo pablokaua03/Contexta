@@ -5,10 +5,14 @@ ui.py - Premium Tkinter GUI for Contexta.
 from __future__ import annotations
 
 import base64
+import os
+import queue
 import struct
+import subprocess
 import sys
 import threading
 import tkinter as tk
+from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, ttk
 
@@ -22,6 +26,7 @@ from contexta_app.context_engine import (
     PACK_OPTIONS,
     TASK_PROFILE_OPTIONS,
 )
+from contexta_app import memory as mem
 from contexta_app.renderer import __version__, generate_markdown, section_titles_for_preview
 from contexta_app.scanner import build_tree, count_files, get_git_changed_files, load_gitignore_patterns
 from contexta_app.theme import C, FB, FBS, FH, FL, FM, FS, FT, ThemeRegistry, contrast_ratio, darken, readable_fg, reg, toggle_theme
@@ -36,6 +41,13 @@ try:
 except Exception:  # the images are a nicety, never a reason to fail at startup
     EMBEDDED_ICON_PNG_BASE64 = EMBEDDED_LOGO_PNG_BASE64 = EMBEDDED_LOGO_2X_PNG_BASE64 = ""
 
+
+MEMORY_GUIDE = (
+    "Contexta can remember a project: files, symbols, how they connect and which files change together. It never stores file content, credentials or authors, and it needs no model.\n"
+    "- Update memory builds or refreshes it. Hot files, Symbols, Impact and Open map ask it questions. Answers appear in the Memory tab.\n"
+    "- Save this analysis to Contexta memory: when on, each analysis updates the memory. When off, an analysis can still read an existing memory but never writes it.\n"
+    "- Memory to use: this project's memory, the memory in another folder, or none. With none, nothing is read or written."
+)
 
 PACK_HELP = {
     "custom": "Leaves every control in your hands without forcing a workflow.",
@@ -716,6 +728,62 @@ class StatChip(tk.Frame):
         self._caption.configure(bg=C["bg2"], fg=C["text3"])
 
 
+def open_with_system(path: Path) -> None:
+    """Open a file with the app the system associates with it. Raises OSError when nothing can."""
+    if sys.platform.startswith("win"):
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    command = ["open", str(path)] if sys.platform == "darwin" else ["xdg-open", str(path)]
+    try:
+        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError as exc:
+        raise OSError("No app is set up to open this file.") from exc
+
+
+def friendly_time(iso: str | None) -> str:
+    """'2026-10-24T20:55:12Z' as local 'Oct 24, 17:55'. Falls back to the original text."""
+    if not iso:
+        return "never"
+    try:
+        stamp = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return stamp.astimezone().strftime("%b %d, %H:%M")
+    except ValueError:
+        return iso
+
+
+def describe_memory_status(info: dict) -> tuple[str, str, str]:
+    """(tone, headline, detail) for the Project memory card. Pure, so tests need no window."""
+    state = info.get("state")
+    if state == "ready":
+        detail = f"{info['files']:,} files   {info['symbols']:,} symbols   {info['edges']:,} edges\nUpdated {friendly_time(info.get('updated_at'))}"
+        return "ok", "Memory ready", detail
+    if state == "empty":
+        return "warn", "Memory is empty", info["message"]
+    if state == "absent":
+        return "warn", "No memory yet", info["message"]
+    if state == "disabled":
+        return "muted", "Memory off", info["message"]
+    if state == "needs_folder":
+        return "warn", "Choose a memory folder", info["message"]
+    if state == "error":
+        return "err", "Memory problem", info["message"]
+    return "muted", "No project", info.get("message", "")
+
+
+MEMORY_HINTS = {
+    "save": "Each analysis updates this memory so the next one starts from what Contexta already knows.",
+    "read_only": "Reads the memory to rank files. This analysis will not write to it.",
+    "off": "This analysis will not read or write any memory.",
+}
+
+
+def memory_hint(choice: "mem.MemoryChoice") -> str:
+    choice = choice.normalized()
+    if choice.mode == "none":
+        return MEMORY_HINTS["off"]
+    return MEMORY_HINTS["save"] if choice.save else MEMORY_HINTS["read_only"]
+
+
 class App(tk.Tk):
     def __init__(self):
         _set_windows_app_id()
@@ -740,6 +808,7 @@ class App(tk.Tk):
         _apply_window_icon(self, self._icon_photo)
 
         self._setup_ttk()
+        self._ui_calls: queue.Queue = queue.Queue()
         self._init_vars()
         self._build_ui()
         self._setup_scroll_routing()
@@ -748,6 +817,26 @@ class App(tk.Tk):
         self._sync_option_states()
         self._refresh_preview()
         self._center()
+        self.after(40, self._drain_ui_calls)
+
+    def _post(self, fn):
+        """Run ``fn`` on the UI thread. Safe to call from any thread: Tk itself is only touched from its own."""
+        if threading.current_thread() is threading.main_thread():
+            self.after(0, fn)
+        else:
+            self._ui_calls.put(fn)
+
+    def _drain_ui_calls(self):
+        while True:
+            try:
+                fn = self._ui_calls.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                fn()
+            except tk.TclError:  # the window closed while work was finishing
+                pass
+        self.after(40, self._drain_ui_calls)
 
     def _init_vars(self):
         self._combo_widgets: dict[str, tuple[tk.Variable, ttk.Combobox, dict[str, str]]] = {}
@@ -765,6 +854,18 @@ class App(tk.Tk):
         self._diff_var = tk.BooleanVar()
         self._staged_var = tk.BooleanVar()
         self._copy_var = tk.BooleanVar(value=True)
+        saved = mem.load_choice()
+        self._mem_save_var = tk.BooleanVar(value=saved.save)
+        self._mem_mode = saved.mode
+        self._mem_folder_var = tk.StringVar(value=saved.folder)
+        self._mem_busy = False
+        self._mem_tone = "muted"
+        self._mem_title_text = "No project"
+        self._mem_detail_text = ""
+        self._mem_buttons: list[FlatBtn] = []
+        self._run_plan = mem.MemoryPlan()
+        self._mem_save_var.trace_add("write", lambda *_: self._memory_choice_changed())
+        self._mem_folder_var.trace_add("write", lambda *_: self._memory_choice_changed())
 
     def _bind_runtime_fonts(self):
         import contexta_app.theme as theme_mod
@@ -944,7 +1045,7 @@ class App(tk.Tk):
         project_card = Card(left)
         project_card.grid(row=0, column=0, sticky="ew")
         project_inner = project_card.inner()
-        self._section(project_inner, "Project", "Folder Contexta will read. Nothing in it is modified.").pack(anchor="w")
+        self._section(project_inner, "Project", "Folder Contexta will read. Your files are never modified.").pack(anchor="w")
         row = tk.Frame(project_inner, bg=C["card"])
         row.pack(fill="x", pady=(14, 0))
         reg(row, lambda w: w.configure(bg=C["card"]))
@@ -968,8 +1069,10 @@ class App(tk.Tk):
         self._btn_pick = FlatBtn(row, "Browse", "accent", self._pick_folder, font=FBS, padx=14, pady=7, surface_key="card", variant="soft")
         self._btn_pick.pack(side="left", padx=(10, 0))
 
+        self._build_memory_card(left, row=1)
+
         strategy_card = Card(left)
-        strategy_card.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        strategy_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         strategy_inner = strategy_card.inner()
         self._section(strategy_inner, "Context strategy", "A pack is the preset. Mode and focus shape which files rise to the top.").pack(anchor="w")
         self._combo_field(strategy_inner, "Context pack", self._pack_var, PACK_OPTIONS).pack(fill="x", pady=(14, 0))
@@ -977,7 +1080,7 @@ class App(tk.Tk):
         self._entry_field(strategy_inner, "Focus", self._focus_var, "Optional. Try login, billing, or a file name.").pack(fill="x", pady=(12, 0))
 
         output_card = Card(left)
-        output_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        output_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         output_inner = output_card.inner()
         self._section(output_inner, "Output", "Who will read the pack, what they should do, and how much code to keep.").pack(anchor="w")
         self._combo_field(output_inner, "AI target", self._ai_var, AI_PROFILE_OPTIONS).pack(fill="x", pady=(14, 0))
@@ -1010,7 +1113,7 @@ class App(tk.Tk):
         self._register_scroll_target(self._prompt)
 
         options_card = Card(left)
-        options_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        options_card.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         options_inner = options_card.inner()
         self._section(options_inner, "Scan options", "Widen the scan or lean on git. Details live in the guide.").pack(anchor="w")
         toggles = tk.Frame(options_inner, bg=C["card"])
@@ -1032,11 +1135,11 @@ class App(tk.Tk):
 
         # Room for options added elsewhere (budgets, redaction, presets).
         self.extension_slot = tk.Frame(left, bg=C["bg"])
-        self.extension_slot.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        self.extension_slot.grid(row=5, column=0, sticky="ew", pady=(12, 0))
         reg(self.extension_slot, lambda w: w.configure(bg=C["bg"]))
 
         mcp_card = Card(left)
-        mcp_card.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        mcp_card.grid(row=6, column=0, sticky="ew", pady=(12, 0))
         mcp_inner = mcp_card.inner()
         self._section(mcp_inner, "MCP Server Setup", "Auto-configure Contexta as a tool server for your AI editor.").pack(anchor="w")
         mcp_btns = tk.Frame(mcp_inner, bg=C["card"])
@@ -1049,6 +1152,351 @@ class App(tk.Tk):
         mcp_hint.pack(anchor="w", pady=(10, 0))
         reg(mcp_hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
 
+    # ------------------------------------------------------------ project memory
+    def _build_memory_card(self, parent, row: int):
+        card = Card(parent)
+        card.grid(row=row, column=0, sticky="ew", pady=(12, 0))
+        inner = card.inner()
+        self._section(inner, "Project memory", "A local map of files, symbols and how they connect. It never stores file content, credentials or authors.").pack(anchor="w")
+
+        status = tk.Frame(inner, bg=C["card"])
+        status.pack(fill="x", pady=(12, 0))
+        self._mem_status_frame = status
+        self._mem_dot = tk.Label(status, text="●", font=FBS, bg=C["card"])
+        self._mem_dot.grid(row=0, column=0, sticky="nw")
+        self._mem_title = tk.Label(status, text="", font=FBS, bg=C["card"], anchor="w")
+        self._mem_title.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self._mem_detail = tk.Label(status, text="", font=FT, bg=C["card"], justify="left", anchor="w", wraplength=320)
+        self._mem_detail.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
+        status.grid_columnconfigure(1, weight=1)
+        status.bind("<Configure>", lambda e: self._mem_detail.configure(wraplength=max(e.width - 30, 160)), add="+")
+        reg(status, lambda w: self._paint_memory_status())
+
+        update_row = tk.Frame(inner, bg=C["card"])
+        update_row.pack(fill="x", pady=(12, 0))
+        reg(update_row, lambda w: w.configure(bg=C["card"]))
+        self._btn_mem_update = FlatBtn(update_row, "Update memory", "accent", self._memory_update, font=FBS, padx=14, pady=7, surface_key="card", variant="solid")
+        self._btn_mem_update.pack(fill="x")
+
+        tools = tk.Frame(inner, bg=C["card"])
+        tools.pack(fill="x", pady=(8, 0))
+        reg(tools, lambda w: w.configure(bg=C["card"]))
+        specs = (
+            ("_btn_mem_hot", "Hot files", self._memory_hot),
+            ("_btn_mem_symbols", "Symbols", self._memory_symbols),
+            ("_btn_mem_impact", "Impact", self._memory_impact),
+            ("_btn_mem_map", "Open map", self._memory_open_map),
+        )
+        for index, (attr, label, command) in enumerate(specs):
+            tools.grid_columnconfigure(index, weight=1, uniform="memtools")
+            button = FlatBtn(tools, label, "accent", command, font=FBS, padx=8, pady=6, surface_key="card", variant="ghost")
+            button.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 6, 0))
+            setattr(self, attr, button)
+        self._mem_buttons = [self._btn_mem_update, self._btn_mem_hot, self._btn_mem_symbols, self._btn_mem_impact, self._btn_mem_map]
+
+        rule = tk.Frame(inner, bg=C["border"], height=1)
+        rule.pack(fill="x", pady=(14, 12))
+        reg(rule, lambda w: w.configure(bg=C["border"]))
+
+        self._toggle_mem_save = Toggle(inner, "Save this analysis to Contexta memory", self._mem_save_var)
+        self._toggle_mem_save.pack(anchor="w")
+
+        pick_label = tk.Label(inner, text="Memory to use", font=FT, bg=C["card"], fg=C["text3"])
+        pick_label.pack(anchor="w", pady=(12, 6))
+        reg(pick_label, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+        self._mem_selector = Segmented(inner, [(key, label) for key, label in (("project", "This project"), ("folder", "Another folder"), ("none", "None"))], self._memory_mode_changed)
+        self._mem_selector.pack(anchor="w")
+        self._mem_selector.set(self._mem_mode)
+
+        self._mem_folder_row = tk.Frame(inner, bg=C["card"])
+        reg(self._mem_folder_row, lambda w: w.configure(bg=C["card"]))
+        folder_shell = self._input_shell(self._mem_folder_row)
+        folder_shell.pack(side="left", fill="x", expand=True)
+        folder_entry = tk.Entry(
+            folder_shell, textvariable=self._mem_folder_var, font=FM, bg=C["input"], fg=C["text"], insertbackground=C["accent"],
+            relief="flat", bd=0, selectbackground=C["accent"], selectforeground=readable_fg(C["accent"]),
+        )
+        folder_entry.pack(fill="x", padx=10, ipady=6)
+        reg(folder_entry, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"], selectbackground=C["accent"], selectforeground=readable_fg(C["accent"])))
+        self._bind_input_focus(folder_entry, folder_shell)
+        FlatBtn(self._mem_folder_row, "Browse", "accent", self._memory_pick_folder, font=FBS, padx=12, pady=5, surface_key="card", variant="soft").pack(side="left", padx=(8, 0))
+
+        self._mem_hint = tk.Label(inner, text="", font=FT, bg=C["card"], fg=C["text3"], justify="left", anchor="w", wraplength=320)
+        self._mem_hint.pack(anchor="w", fill="x", pady=(10, 0))
+        reg(self._mem_hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+        inner.bind("<Configure>", lambda e: self._mem_hint.configure(wraplength=max(e.width - 8, 160)), add="+")
+        self._sync_memory_controls()
+        self._refresh_memory_status()
+
+    def _memory_choice(self) -> "mem.MemoryChoice":
+        return mem.MemoryChoice(self._mem_save_var.get(), self._mem_mode, self._mem_folder_var.get()).normalized()
+
+    def _memory_mode_changed(self, key: str):
+        self._mem_mode = key
+        self._memory_choice_changed()
+
+    def _memory_choice_changed(self):
+        if not hasattr(self, "_mem_hint"):
+            return
+        mem.save_choice(self._memory_choice())
+        self._sync_memory_controls()
+        self._refresh_memory_status()
+
+    def _sync_memory_controls(self):
+        choice = self._memory_choice()
+        self._toggle_mem_save.configure(state="disabled" if choice.mode == "none" else "normal")
+        if choice.mode == "folder":
+            self._mem_folder_row.pack(fill="x", pady=(8, 0), after=self._mem_selector)
+        else:
+            self._mem_folder_row.pack_forget()
+        self._mem_hint.configure(text=memory_hint(choice))
+
+    def _memory_pick_folder(self):
+        path = filedialog.askdirectory(title="Select the folder whose memory to use")
+        if path:
+            self._mem_folder_var.set(path)
+
+    def _refresh_memory_status(self):
+        info = mem.memory_status(self._project_path, self._memory_choice())
+        self._mem_tone, self._mem_title_text, self._mem_detail_text = describe_memory_status(info)
+        self._paint_memory_status()
+
+    def _paint_memory_status(self):
+        if not hasattr(self, "_mem_dot"):
+            return
+        color = {"ok": C["green"], "warn": C["amber"], "err": C["red"]}.get(self._mem_tone, C["text3"])
+        self._mem_status_frame.configure(bg=C["card"])
+        self._mem_dot.configure(bg=C["card"], fg=color)
+        self._mem_title.configure(bg=C["card"], fg=C["text"], text=self._mem_title_text)
+        self._mem_detail.configure(bg=C["card"], fg=C["text2"], text=self._mem_detail_text)
+
+    def _set_memory_buttons(self, enabled: bool):
+        for button in self._mem_buttons:
+            button.configure(state="normal" if enabled else "disabled")
+
+    def _memory_task(self, title: str, work, *, working: str, on_done=None):
+        """Run ``work`` off the UI thread and show what it returns in the Memory panel."""
+        if self._running:
+            self._show_banner("Wait for the context pack to finish, then use the memory.", "warn")
+            return
+        if self._mem_busy:
+            return
+        project, choice = self._project_path, self._memory_choice()
+        self._mem_busy = True
+        self._hide_banner()
+        self._set_memory_buttons(False)
+        self._btn_generate.configure(state="disabled")
+        self._progress.grid()
+        self._progress.start(12)
+        self._set_status("Memory", "accent", "ink")
+        self._show_memory(title, working, "muted")
+
+        done: queue.Queue = queue.Queue()
+
+        def job():
+            outcome: tuple = ("ok", "")
+            try:
+                outcome = ("ok", work(project, choice))
+            except mem.MemoryMissing as exc:
+                outcome = ("missing", str(exc))
+            except mem.MemoryProblem as exc:
+                outcome = ("err", str(exc))
+            except Exception as exc:  # shown plainly, never a traceback in the window
+                outcome = ("err", f"Memory could not finish: {exc or exc.__class__.__name__}")
+            done.put(outcome)  # the UI thread picks it up; Tk is only touched from there
+
+        def poll():
+            try:
+                outcome = done.get_nowait()
+            except queue.Empty:
+                self.after(60, poll)
+                return
+            self._memory_finished(title, outcome, on_done)
+
+        threading.Thread(target=job, daemon=True).start()
+        self.after(60, poll)
+
+    def _memory_finished(self, title: str, outcome: tuple, on_done):
+        self._mem_busy = False
+        self._set_memory_buttons(True)
+        if self._project_path and not self._running:
+            self._btn_generate.configure(state="normal")
+        self._hide_progress()
+        kind, text = outcome
+        if kind == "ok":
+            self._set_status(self._project_path.name if self._project_path else "Ready", "tag_bg", "tag_fg")
+            self._show_memory(title, text, "ok")
+            self._log_write(f"Memory: {title.lower()} done.", "ok")
+            if on_done:
+                on_done(text)
+        elif kind == "missing":
+            self._set_status("No memory", "warn_soft", "amber")
+            self._show_memory(title, text, "warn", offer_update=True)
+        else:
+            self._set_status("Memory", "danger_soft", "red")
+            self._show_memory(title, text, "err")
+            self._log_write(f"Memory: {text}", "err")
+        self._refresh_memory_status()
+
+    def _memory_needs_project(self) -> bool:
+        if self._project_path:
+            return False
+        self._show_memory("Project memory", "Choose a project folder first. Memory is kept per project.", "warn")
+        return True
+
+    def _memory_update(self):
+        if self._memory_needs_project():
+            return
+        self._memory_task("Update memory", lambda p, c: mem.update_memory(p, c), working="Reading the project and updating its memory…")
+
+    def _memory_hot(self):
+        if self._memory_needs_project():
+            return
+        self._memory_task("Hot files", lambda p, c: mem.hot_files(p, c), working="Reading the history…")
+
+    def _memory_symbols(self):
+        if self._memory_needs_project():
+            return
+        query = self._ask_text("Symbols", "Search symbols by name", "login, Invoice, parse_args")
+        if query is None:
+            return
+        self._memory_task(f"Symbols: {query.strip()}", lambda p, c: mem.find_symbols(p, c, query), working="Searching…")
+
+    def _memory_impact(self):
+        if self._memory_needs_project():
+            return
+        target = self._ask_text("Impact", "File to check, relative to the project", "src/app.py")
+        if target is None:
+            return
+        self._memory_task(f"Impact: {target.strip()}", lambda p, c: mem.impact_of(p, c, target), working="Following the connections…")
+
+    def _memory_open_map(self):
+        if self._memory_needs_project():
+            return
+
+        def work(project, choice):
+            out_file = get_desktop() / f"contexta map - {safe_project_name(project.name)}.md"
+            mem.export_map(project, choice, out_file)
+            lines = out_file.read_text(encoding="utf-8").splitlines()
+            shown = "\n".join(lines[:160])
+            more = f"\n… {len(lines) - 160} more lines in the file." if len(lines) > 160 else ""
+            return f"Saved: {out_file}\n\n{shown}{more}\n"
+
+        def opened(text: str):
+            first = text.splitlines()[0].removeprefix("Saved: ")
+            try:
+                open_with_system(Path(first))
+            except OSError as exc:
+                self._log_write(f"Map saved, but it could not be opened: {exc}", "warn")
+
+        self._memory_task("Memory map", work, working="Building the map…", on_done=opened)
+
+    def _ask_text(self, title: str, label: str, hint: str) -> str | None:
+        """A small modal prompt in the app's style. Returns the text, or None when cancelled."""
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.configure(bg=C["card"])
+        win.transient(self)
+        win.resizable(False, False)
+        _apply_window_icon(win, self._icon_photo)
+        result: dict[str, str | None] = {"value": None}
+        body = tk.Frame(win, bg=C["card"])
+        body.pack(fill="both", expand=True, padx=20, pady=18)
+        caption = tk.Label(body, text=label, font=FBS, bg=C["card"], fg=C["text"], anchor="w")
+        caption.pack(anchor="w")
+        example = tk.Label(body, text=f"For example: {hint}", font=FT, bg=C["card"], fg=C["text3"], anchor="w")
+        example.pack(anchor="w", pady=(2, 10))
+        var = tk.StringVar()
+        shell = self._input_shell(body)
+        shell.pack(fill="x")
+        entry = tk.Entry(shell, textvariable=var, font=FM, width=44, bg=C["input"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0)
+        entry.pack(fill="x", padx=10, ipady=7)
+        self._bind_input_focus(entry, shell)
+
+        def accept(_event=None):
+            result["value"] = var.get()
+            win.destroy()
+
+        buttons = tk.Frame(body, bg=C["card"])
+        buttons.pack(fill="x", pady=(14, 0))
+        FlatBtn(buttons, "Cancel", "accent", win.destroy, font=FBS, padx=14, pady=6, surface_key="card", variant="ghost").pack(side="right")
+        FlatBtn(buttons, "Search" if title == "Symbols" else "Check", "accent", accept, font=FBS, padx=14, pady=6, surface_key="card", variant="solid").pack(side="right", padx=(0, 8))
+        entry.bind("<Return>", accept)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + 120
+        win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        win.grab_set()
+        entry.focus_set()
+        self.wait_window(win)
+        return result["value"]
+
+    # -- the Memory panel on the right
+    def _build_memory_panel(self, stack):
+        self._memory_shell = tk.Frame(stack, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"])
+        self._memory_shell.grid(row=0, column=0, sticky="nsew")
+        self._memory_shell.grid_columnconfigure(0, weight=1)
+        self._memory_shell.grid_rowconfigure(1, weight=1)
+        reg(self._memory_shell, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
+        head = tk.Frame(self._memory_shell, bg=C["bg2"])
+        head.grid(row=0, column=0, columnspan=2, sticky="ew")
+        reg(head, lambda w: w.configure(bg=C["bg2"]))
+        head.grid_columnconfigure(0, weight=1)
+        self._memory_meta = tk.Label(head, text="", font=FT, bg=C["bg2"], fg=C["text3"], anchor="w", justify="left", wraplength=420, padx=14, pady=8)
+        self._memory_meta.grid(row=0, column=0, sticky="ew")
+        reg(self._memory_meta, lambda w: w.configure(bg=C["bg2"], fg=C["text3"]))
+        self._memory_offer = FlatBtn(head, "Update memory now", "accent", self._memory_update, font=FBS, padx=12, pady=5, surface_key="bg2", variant="solid")
+        self._memory_offer.grid(row=0, column=1, padx=(0, 12))
+        self._memory_offer.grid_remove()
+        self._memory_text = tk.Text(
+            self._memory_shell, font=FM, bg=C["bg2"], fg=C["text"], relief="flat", bd=0, padx=14, pady=8,
+            wrap="word", state="disabled", cursor="arrow",
+        )
+        self._memory_text.grid(row=1, column=0, sticky="nsew")
+        reg(self._memory_text, lambda w: w.configure(bg=C["bg2"], fg=C["text"]))
+        scroll = ttk.Scrollbar(self._memory_shell, orient="vertical", command=self._memory_text.yview)
+        scroll.grid(row=1, column=1, sticky="ns")
+        self._memory_text.configure(yscrollcommand=scroll.set)
+        self._register_scroll_target(self._memory_shell, self._memory_text)
+        self._register_scroll_target(self._memory_text)
+        self._configure_memory_tags()
+        self._memory_shell.grid_remove()
+
+    def _configure_memory_tags(self):
+        sans = FS[0]
+        self._memory_text.tag_configure("title", font=(sans, 14, "bold"), foreground=C["text"], spacing3=8)
+        self._memory_text.tag_configure("body", font=FM, foreground=C["text2"], spacing3=1)
+        self._memory_text.tag_configure("ok", font=FM, foreground=C["text"], spacing3=1)
+        self._memory_text.tag_configure("muted", font=FS, foreground=C["text3"])
+        self._memory_text.tag_configure("warn", font=FS, foreground=C["amber"])
+        self._memory_text.tag_configure("err", font=FS, foreground=C["red"])
+
+    def _show_memory(self, title: str, text: str, tone: str = "ok", offer_update: bool = False):
+        """Put an answer from the project memory in the right-hand panel."""
+        self._memory_meta.configure(text=self._memory_scope_line())
+        self._memory_text.configure(state="normal")
+        self._memory_text.delete("1.0", "end")
+        self._memory_text.insert("end", title + "\n", "title")
+        body_tag = {"ok": "ok", "muted": "muted", "warn": "warn", "err": "err"}.get(tone, "body")
+        for line in text.splitlines() or [""]:
+            self._memory_text.insert("end", line + "\n", body_tag if tone != "ok" else "body")
+        self._memory_text.configure(state="disabled")
+        self._memory_text.see("1.0")
+        if offer_update:
+            self._memory_offer.grid()
+        else:
+            self._memory_offer.grid_remove()
+        self._view_switch.set("memory")
+        self._show_reader()
+
+    def _memory_scope_line(self) -> str:
+        choice = self._memory_choice()
+        name = self._project_path.name if self._project_path else "no project"
+        if choice.mode == "folder" and choice.folder:
+            return f"{name}      memory from another folder"
+        return f"{name}      {mem.MODE_LABELS[choice.mode].lower()}"
+
     def _build_preview(self, parent):
         self._reader = Card(parent, pad=14)
         self._reader.grid(row=0, column=0, sticky="nsew")
@@ -1059,8 +1507,10 @@ class App(tk.Tk):
         header = tk.Frame(inner, bg=C["card"])
         header.grid(row=0, column=0, sticky="ew")
         reg(header, lambda w: w.configure(bg=C["card"]))
-        self._section(header, "Pack", "What this export will emphasize, then the Markdown itself.").pack(side="left", anchor="w")
-        self._view_switch = Segmented(header, [("preview", "Preview"), ("result", "Result")], self._set_view)
+        reader_title = self._section(header, "Pack", "What this export will emphasize, then the Markdown itself.")
+        reader_title.pack(side="left", anchor="w")
+        self._reader_title, self._reader_subtitle = reader_title.winfo_children()
+        self._view_switch = Segmented(header, [("preview", "Preview"), ("result", "Result"), ("memory", "Memory")], self._set_view)
         self._view_switch.pack(side="right", anchor="e")
 
         self._metrics = tk.Frame(inner, bg=C["card"])
@@ -1174,6 +1624,7 @@ class App(tk.Tk):
         self._register_scroll_target(self._result_shell, self._result)
         self._register_scroll_target(self._result)
         self._configure_result_tags()
+        self._build_memory_panel(self._preview_stack)
         self._result_shell.grid_remove()
         self._preview_shell.grid_remove()
 
@@ -1503,14 +1954,27 @@ class App(tk.Tk):
         self._empty_state.grid()
         self._preview_shell.grid_remove()
         self._result_shell.grid_remove()
+        self._memory_shell.grid_remove()
 
     def _show_reader(self):
         self._empty_state.grid_remove()
-        if self._view_switch._current == "result":
-            self._preview_shell.grid_remove()
-            self._result_shell.grid()
+        current = self._view_switch._current
+        if current == "memory":
+            self._reader_title.configure(text="Project memory")
+            self._reader_subtitle.configure(text="What Contexta remembers about this project. Names and relations only.")
+            self._metrics.grid_remove()
         else:
-            self._result_shell.grid_remove()
+            self._reader_title.configure(text="Pack")
+            self._reader_subtitle.configure(text="What this export will emphasize, then the Markdown itself.")
+            self._metrics.grid()
+        self._preview_shell.grid_remove()
+        self._result_shell.grid_remove()
+        self._memory_shell.grid_remove()
+        if current == "result":
+            self._result_shell.grid()
+        elif current == "memory":
+            self._memory_shell.grid()
+        else:
             self._preview_shell.grid()
 
     def _set_view(self, key: str):
@@ -1519,6 +1983,9 @@ class App(tk.Tk):
             return
         if key == "result" and not self._last_md:
             self._render_result_placeholder()
+        if key == "memory" and not self._memory_text.get("1.0", "end").strip():
+            self._show_memory("Project memory", "Use Update memory, Hot files, Symbols, Impact or Open map on the left. Results show up here.", "muted")
+            return
         self._show_reader()
 
     def _render_result_placeholder(self):
@@ -1616,6 +2083,7 @@ class App(tk.Tk):
         self._configure_preview_tags()
         self._configure_result_tags()
         self._configure_log_tags()
+        self._configure_memory_tags()
         self._paint_status()
         if self._banner_tone:
             self._paint_banner()
@@ -1637,15 +2105,32 @@ class App(tk.Tk):
         self._set_status(self._project_path.name, "tag_bg", "tag_fg")
         self._view_switch.set("preview")
         self._refresh_preview()
+        self._refresh_memory_status()
 
     def _start(self):
-        if self._running or not self._project_path:
+        if self._running or self._mem_busy or not self._project_path:
             return
+        self._run_plan = mem.plan_for(self._project_path, self._memory_choice())
+        # Read every control here, on the UI thread. The worker never touches a widget.
+        self._run_args = dict(
+            include_hidden=self._hidden_var.get(),
+            include_unknown=self._unknown_var.get(),
+            diff_mode=self._diff_var.get(),
+            staged_only=self._staged_var.get(),
+            system_prompt=self._prompt.get("1.0", "end").strip(),
+            context_mode=self._mode_var.get(),
+            ai_profile=self._ai_var.get(),
+            task_profile=self._task_var.get(),
+            compression=self._compression_var.get(),
+            pack_profile=self._pack_var.get(),
+            focus_query=self._focus_var.get().strip(),
+        )
         self._running = True
         self._hide_banner()
         self._btn_generate.configure(state="disabled", text="Creating…")
         self._btn_pick.configure(state="disabled")
         self._btn_copy.configure(state="disabled")
+        self._set_memory_buttons(False)
         self._progress.grid()
         self._progress.start(12)
         self._log_clear()
@@ -1655,36 +2140,37 @@ class App(tk.Tk):
 
     def _worker(self):
         try:
-            custom_goal = self._prompt.get("1.0", "end").strip()
+            plan = self._run_plan
+            if plan.problem:
+                self._log_write(f"{plan.problem} Continuing without memory.", "warn")
+            elif plan.use:
+                self._log_write(f"Memory: {plan.label.lower()}, {'read only' if plan.read_only else 'saving this analysis'}.", "info")
+            else:
+                self._log_write("Memory is off for this analysis.", "muted")
             markdown = generate_markdown(
                 self._project_path,
-                include_hidden=self._hidden_var.get(),
-                include_unknown=self._unknown_var.get(),
-                diff_mode=self._diff_var.get(),
-                staged_only=self._staged_var.get(),
-                system_prompt=custom_goal,
-                context_mode=self._mode_var.get(),
-                ai_profile=self._ai_var.get(),
-                task_profile=self._task_var.get(),
-                compression=self._compression_var.get(),
-                pack_profile=self._pack_var.get(),
-                focus_query=self._focus_var.get().strip(),
+                **self._run_args,
+                use_graph=plan.use,
+                graph_db=plan.db_path,
+                graph_readonly=plan.read_only,
                 log_cb=self._log_write,
             )
             desktop = get_desktop()
             safe_name = safe_project_name(self._project_path.name)
             out_file = desktop / f"contexta - {safe_name}.md"
             out_file.write_text(markdown, encoding="utf-8")
-            self.after(0, lambda: self._finish_success(markdown, out_file, self._copy_var.get()))
+            self._post(lambda: self._finish_success(markdown, out_file, self._copy_var.get()))
         except Exception as exc:
             message = str(exc)
             self._log_write(f"Error: {message}", "err")
-            self.after(0, lambda m=message: self._show_error(m))
+            self._post(lambda m=message: self._show_error(m))
         finally:
             self._running = False
-            self.after(0, self._hide_progress)
-            self.after(0, lambda: self._btn_generate.configure(state="normal", text="Create context pack"))
-            self.after(0, lambda: self._btn_pick.configure(state="normal"))
+            self._post(self._hide_progress)
+            self._post(lambda: self._btn_generate.configure(state="normal", text="Create context pack"))
+            self._post(lambda: self._btn_pick.configure(state="normal"))
+            self._post(lambda: self._set_memory_buttons(True))
+            self._post(self._refresh_memory_status)
 
     def _hide_progress(self):
         self._progress.stop()
@@ -1732,7 +2218,7 @@ class App(tk.Tk):
             self._log.see("end")
             self._log.configure(state="disabled")
 
-        self.after(0, _write)
+        self._post(_write)
 
     def _center(self):
         self.update_idletasks()
@@ -1809,6 +2295,7 @@ class App(tk.Tk):
             ("Compression", "\n".join(f"- {label}: {COMPRESSION_HELP.get(key, '')}" for key, label in COMPRESSION_OPTIONS.items())),
             ("Focus", "Use a bug name, feature, route, service, file name, or keyword when you want Contexta to bias scoring, ordering, excerpts, and related files around a specific area."),
             ("Options", OPTION_GUIDE),
+            ("Project memory", MEMORY_GUIDE),
         ]
 
         for heading, body in sections:
