@@ -29,5 +29,8 @@ jobs:
       - name: Build package
         run: python -m build
 
+      - name: Smoke-test the wheel in a clean virtualenv
+        run: python scripts/smoke_wheel.py --wheel "$(ls dist/*.whl)"
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
