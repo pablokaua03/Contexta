@@ -14,7 +14,7 @@ import threading
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from contexta_app.context_engine import (
     AI_PROFILE_OPTIONS,
@@ -2311,24 +2311,34 @@ class App(tk.Tk):
         close_btn.pack(anchor="e")
 
     def _get_mcp_entry(self) -> dict:
+        if getattr(sys, "frozen", False):
+            # The packaged app has no contexta_mcp.py next to it: the executable itself serves MCP.
+            return {"command": sys.executable.replace("\\", "/"), "args": ["serve"]}
         mcp_script = Path(__file__).resolve().parent.parent / "contexta_mcp.py"
-        python_cmd = sys.executable
-        return {
-            "command": python_cmd.replace("\\", "/"),
-            "args": [str(mcp_script).replace("\\", "/")],
-        }
+        if mcp_script.exists():
+            args = [str(mcp_script).replace("\\", "/")]
+        else:  # installed from the wheel: there is no loose script, the package runs as a module
+            args = ["-m", "contexta_app", "serve"]
+        return {"command": sys.executable.replace("\\", "/"), "args": args}
 
     def _write_mcp_config(self, config_path: Path, editor_name: str):
         import json
+        import shutil
 
         config_path.parent.mkdir(parents=True, exist_ok=True)
         existing = {}
         if config_path.exists():
             try:
                 existing = json.loads(config_path.read_text(encoding="utf-8"))
+                if not isinstance(existing, dict):
+                    raise ValueError("not a JSON object")
             except Exception:
-                pass
-        if "mcpServers" not in existing:
+                # Keep what the user had instead of silently replacing it.
+                backup = config_path.with_name(config_path.name + ".bak")
+                shutil.copy2(config_path, backup)
+                self._log_write(f"Could not read {config_path.name}; saved a copy as {backup.name}", "warn")
+                existing = {}
+        if not isinstance(existing.get("mcpServers"), dict):
             existing["mcpServers"] = {}
         existing["mcpServers"]["contexta"] = self._get_mcp_entry()
         config_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
