@@ -28,6 +28,7 @@ from contexta_app.context_engine import (
     extract_signatures,
     related_test_score,
 )
+from contexta_app.graph import ProjectGraph
 from contexta_app.redaction import find_secrets, redact_secrets
 from contexta_app.selector import fit_to_budget, tiers_for
 from contexta_app.scanner import (
@@ -1728,6 +1729,7 @@ def _generate_markdown_once(
     redact_allow: tuple[str, ...] = (),
     redact_entropy: bool = True,
     dry_run: bool = False,
+    use_graph: bool = False,
 ) -> str:
     if log_cb is None:
         log_cb = lambda msg, tag="": None
@@ -1779,10 +1781,17 @@ def _generate_markdown_once(
         max_files,
     )
 
+    analysis_tree = full_tree
+    if use_graph:
+        analysis_tree, config = _apply_graph(
+            project_path, full_tree, config, changed_files, log_cb, stats,
+            owns_scan=not (include_hidden or include_unknown or max_files),
+        )
+
     fit_selection = None
     if payload_budget is not None:
         fit_selection = _budget_fitter(resolve_config(config), payload_budget, log_cb)
-    analysis = build_analysis(project_path, full_tree, changed_files, config, log_cb, fit_selection=fit_selection)
+    analysis = build_analysis(project_path, analysis_tree, changed_files, config, log_cb, fit_selection=fit_selection)
     if stats is not None and analysis.budget_report:
         stats["budget_report"] = analysis.budget_report
         stats["dropped"] = [item.relpath.as_posix() for item in analysis.dropped_files]
@@ -1942,9 +1951,65 @@ _SAMPLE_DIRS = frozenset({"examples", "example", "samples", "sample", "demo", "d
 _MANIFEST_NAMES = frozenset({"pyproject.toml", "requirements.txt", "package.json", "composer.json", "cargo.toml", "go.mod", "pom.xml", "setup.py", "setup.cfg"})
 
 
+PREFILTER_MIN_FILES = 800
+PREFILTER_KEEP = 400
+
+
+def _prune_tree(node: dict, root: Path, keep: set[str]) -> dict:
+    files = [f for f in node["files"] if f["path"].relative_to(root).as_posix() in keep]
+    dirs = [_prune_tree(sub, root, keep) for sub in node["dirs"]]
+    dirs = [d for d in dirs if d["files"] or d["dirs"]]
+    return {**node, "files": files, "dirs": dirs}
+
+
+def _apply_graph(project_path, full_tree, config, changed_files, log_cb, stats, owns_scan: bool):
+    """Update the project graph, then use it to rank files. On a large repo with a budget or a focus,
+    analysis covers the files the graph ranks highest instead of every file. Never fails the pack."""
+    try:
+        from contexta_app.engine.insight import flatten_tree
+
+        graph = ProjectGraph(project_path)
+        try:
+            all_paths = flatten_tree(full_tree)
+            result = graph.update(files=all_paths if owns_scan else None)
+            if result.added or result.changed or result.removed:
+                log_cb(result.summary(), "muted")
+            focus = config.focus_query.strip() or None
+            signals = graph.signals_for_pack(focus)
+            tree = full_tree
+            if (config.token_budget or focus) and len(all_paths) > PREFILTER_MIN_FILES:
+                keep: set[str] = set()
+                for row in graph.rank_files(focus=focus, limit=PREFILTER_KEEP, kinds=("source",)):
+                    keep.add(row["path"])
+                top_sources = list(keep)[:80]
+                for t in graph.tests_for(top_sources, limit=200):
+                    keep.add(t["path"])
+                for node_file in all_paths:
+                    rel = node_file.relative_to(project_path)
+                    if len(rel.parts) <= 1 or rel.name.lower() in _MANIFEST_NAMES:
+                        keep.add(rel.as_posix())
+                for changed in changed_files or []:
+                    try:
+                        keep.add(changed.relative_to(project_path).as_posix())
+                    except ValueError:
+                        pass
+                tree = _prune_tree(full_tree, project_path, keep)
+                kept_count = len(flatten_tree(tree))
+                log_cb(f"Graph prefilter: analysing the {kept_count} highest-ranked of {len(all_paths)} files.", "info")
+                if stats is not None:
+                    stats["prefilter"] = {"kept": kept_count, "total": len(all_paths)}
+            return tree, replace(config, graph_signals=signals)
+        finally:
+            graph.close()
+    except Exception as exc:  # the graph is an accelerator, never a reason to fail a pack
+        log_cb(f"Project graph unavailable ({exc.__class__.__name__}); continuing without it.", "warn")
+        return full_tree, config
+
+
 def budget_priority(item) -> float:
     """Higher is more worth keeping when a budget forces a cut."""
     value = float(item.score) + 1.5 * float(getattr(item, "focus_raw", 0.0))
+    value += 3.0 * float(getattr(item, "graph_rank", 0.0)) ** 0.5 + 1.0 * float(getattr(item, "graph_hot", 0.0))
     parts = item.relpath.parts
     if _SAMPLE_DIRS & {part.lower() for part in parts[:-1]}:
         value -= 5.0

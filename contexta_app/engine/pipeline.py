@@ -89,10 +89,18 @@ def build_analysis(
     rel_index, reverse_index = resolve_local_relationships(insights, module_map)
     changed_set = {path.resolve() for path in changed_files or []}
 
+    signals = config.graph_signals or {}
     for insight in insights:
         insight.local_imports = sorted(rel_index[insight.relpath.as_posix()])
         insight.dependents = len(reverse_index[insight.relpath.as_posix()])
         insight.focus_raw = compute_focus_raw(insight, config.focus_query or config.system_prompt)
+        hint = signals.get(insight.relpath.as_posix())
+        if hint:
+            insight.graph_rank = hint.get("rank", 0.0)
+            insight.graph_hot = hint.get("hot", 0.0)
+            insight.graph_focus = hint.get("focus", 0.0)
+            if config.focus_query and insight.graph_focus:
+                insight.focus_raw += 1.5 * insight.graph_focus
         insight.focus_score = round(min(insight.focus_raw, 6.0), 2)
         insight.matched_focus = insight.focus_score > 0
         insight.tags.update(classify_file(insight))

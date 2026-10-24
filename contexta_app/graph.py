@@ -1000,7 +1000,8 @@ class ProjectGraph:
                     if s["path"] in by_path:
                         by_path[s["path"]]["focus"] += 0.5
             for r in rows:
-                r["score"] = r["rank"] + (r["focus"] / max(len(words), 1)) * 1.5
+                r["focus_norm"] = min(r["focus"] / max(len(words), 1), 2.0)
+                r["score"] = r["rank"] + r["focus_norm"] * 1.5
         else:
             for r in rows:
                 r["score"] = r["rank"]
@@ -1009,6 +1010,26 @@ class ProjectGraph:
                 r["score"] *= 0.35
         rows.sort(key=lambda r: (-r["score"], r["path"]))
         return rows[:limit] if limit else rows
+
+    def signals_for_pack(self, focus: str | None = None) -> dict:
+        """Per-file hints for the pack builder: importance, churn, and (with ``focus``) a topical match."""
+        out: dict[str, dict] = {}
+        for r in self.con.execute("SELECT path, rank FROM files"):
+            out[r["path"]] = {"rank": r["rank"] or 0.0}
+        commits = {r["path"]: r["n"] for r in self.con.execute("SELECT path, COUNT(DISTINCT commit_id) AS n FROM history GROUP BY path")}
+        top = max(commits.values(), default=0)
+        if top:
+            for path, n in commits.items():
+                if path in out:
+                    out[path]["hot"] = n / top
+        if focus and focus.strip():
+            ranked = self.rank_files(focus=focus, kinds=("source", "config"))
+            matched = [r for r in ranked if r.get("focus_norm", 0) > 0]
+            for r in matched:
+                out[r["path"]]["focus"] = round(r["focus_norm"], 3)
+            tests = self.tests_for([r["path"] for r in matched[:5]], limit=6)
+            out["__focus_tests__"] = [t["path"] for t in tests]
+        return out
 
     # ------------------------------------------------------------ repo map
     def repo_map(self, budget_tokens: int = 1500, focus: str | None = None, max_files: int = 80) -> dict:

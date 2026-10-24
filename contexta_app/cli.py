@@ -56,6 +56,7 @@ class RunPlan:
     redact_secrets: bool
     redact_allow: tuple[str, ...]
     redact_entropy: bool
+    use_graph: bool
     dry_run: bool
     base_ref: str | None
     output_format: str
@@ -111,6 +112,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"Contexta {__version__}")
 
     pack = parser.add_argument_group("pack")
+    pack.add_argument(
+        "--for", dest="for_task", choices=sorted(FOR_PACKS), default=None, metavar="TASK",
+        help="What you are about to do: bugfix, review (against main), onboard, or refactor. Picks the pack for you",
+    )
     pack.add_argument("--pack", choices=sorted(PACK_OPTIONS), default=None, help="Preset workflow. Default: custom, or the pack in contexta.toml")
     pack.add_argument("--mode", choices=sorted(CONTEXT_MODE_OPTIONS), default=None, help="How files are chosen: full, debug, feature, diff, onboarding, refactor")
     pack.add_argument("--ai", choices=sorted(AI_PROFILE_OPTIONS), default=None, help="Model profile used for budget guidance: generic, chatgpt, claude, gemini, copilot")
@@ -124,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
              "The pack says what was left out. Combine with --focus to spend it where you care",
     )
 
+    pack.add_argument("--no-graph", action="store_true", help="Do not read or write .contexta/graph.db. Graph ranking and the large-repo prefilter are off")
     pack.add_argument("--max-files", type=int, default=None, help="Stop scanning after this many files. Default: 2000, or CONTEXTA_MAX_FILES")
 
     git = parser.add_argument_group("git")
@@ -226,6 +232,20 @@ def _choose(locked: list[str], field_name: str, flag_value, config_value, preset
     return builtin
 
 
+FOR_PACKS = {"bugfix": "bugfix", "review": "pr_review", "onboard": "onboarding", "refactor": "refactor"}
+
+
+def _default_review_base(project: Path) -> str | None:
+    """The branch a review compares against: origin/main, main, origin/master or master, whichever exists."""
+    for ref in ("origin/main", "main", "origin/master", "master"):
+        try:
+            if git_ref_exists(project, ref):
+                return ref
+        except Exception:
+            return None
+    return None
+
+
 def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
     user_cfg = load_user_config()
     project_cfg = load_project_config(project)
@@ -245,7 +265,9 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         raise ConfigError("--base needs a git ref. Example: --base main")
 
     locked: list[str] = []
-    pack = args.pack or cfg.pack or "custom"
+    if args.for_task and args.pack and FOR_PACKS[args.for_task] != args.pack:
+        raise ConfigError(f"--for {args.for_task} means --pack {FOR_PACKS[args.for_task]}. Use one of them, not both.")
+    pack = args.pack or (FOR_PACKS.get(args.for_task) if args.for_task else None) or cfg.pack or "custom"
     preset = PACK_DEFAULTS.get(pack, {})
     mode = _choose(locked, "context_mode", args.mode, cfg.mode, preset.get("context_mode"), "full")
     ai_profile = _choose(locked, "ai_profile", args.ai, cfg.ai, preset.get("ai_profile"), "generic")
@@ -255,6 +277,8 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
 
     explicit_diff = bool(args.diff or args.staged or cfg.diff or cfg.staged)
     user_base = args.base.strip() if isinstance(args.base, str) else None
+    if user_base is None and args.for_task == "review" and cfg.base is None:
+        user_base = _default_review_base(project)
     wants_base = user_base is not None or pack in _DIFF_PACKS or mode == "diff" or explicit_diff
     base = user_base if user_base is not None else (cfg.base if wants_base else None)
     diff_mode = explicit_diff or base is not None or pack in _DIFF_PACKS
@@ -294,6 +318,7 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         redact_secrets=redact,
         redact_allow=tuple(cfg.redact_allow),
         redact_entropy=True if cfg.redact_entropy is None else cfg.redact_entropy,
+        use_graph=not args.no_graph and cfg.graph is not False,
         dry_run=bool(args.dry_run),
         base_ref=base,
         output_format=output_format,
@@ -400,6 +425,7 @@ def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
             redact_secrets=plan.redact_secrets,
             redact_allow=plan.redact_allow,
             redact_entropy=plan.redact_entropy,
+            use_graph=plan.use_graph,
             base_ref=plan.base_ref,
             max_files=plan.max_files,
             token_budget=plan.max_tokens,

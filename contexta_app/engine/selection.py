@@ -220,6 +220,9 @@ def select_focus_files(
         for target in item.local_imports[:3]:
             if target in lookup and "docs" not in lookup[target].tags and "test" not in lookup[target].tags:
                 selected.add(target)
+    for rel in ((config.graph_signals or {}).get("__focus_tests__") or [])[:4]:
+        if rel in lookup:
+            selected.add(rel)
     selected = add_related_tests(selected, lookup, tests, limit=3, min_score=4, allow_token_fallback=False)
     ordered = [lookup[rel] for rel in selected if rel in lookup]
     ordered.sort(

@@ -186,6 +186,7 @@ def generate_context(
             redact_secrets=redact,
             base_ref=base or None,
             token_budget=budget or None,
+            use_graph=True,
         )
     except GitError as exc:
         return f"Error: {exc}"
@@ -612,6 +613,7 @@ def context_for(project_path: str, task: str, budget: int = 8000, focus: str = "
             focus_query=query,
             redact_secrets=redact,
             token_budget=max(500, budget - estimate_tokens(prefix)),
+            use_graph=True,
         )
         return prefix + pack
     except GitError as exc:

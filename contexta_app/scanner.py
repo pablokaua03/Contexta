@@ -500,6 +500,20 @@ def should_ignore_file(
     return False
 
 
+_LOW_VALUE_DIRS = frozenset({"docs", "doc", "docs_src", "examples", "example", "samples", "sample", "demo", "demos", "tutorial", "tutorials", "benchmarks", "translations", "locale", "locales", "i18n"})
+_TEST_DIR_NAMES = frozenset({"tests", "test", "__tests__", "spec", "specs"})
+
+
+def _scan_tier(entry: Path) -> int:
+    """When the file cap is hit, application code should be scanned before docs and examples."""
+    name = entry.name.lower()
+    if name in _LOW_VALUE_DIRS:
+        return 2
+    if name in _TEST_DIR_NAMES:
+        return 1
+    return 0
+
+
 def _symlink_stays_inside(entry: Path, project_root: Path) -> bool:
     """A symlink is followed only when its target is inside the project folder."""
     try:
@@ -532,14 +546,17 @@ def build_tree(
     node: dict = {"name": root.name, "path": root, "dirs": [], "files": []}
 
     try:
-        entries = sorted(root.iterdir(), key=lambda entry: (entry.is_file(), entry.name.lower()))
+        entries = sorted(root.iterdir(), key=lambda entry: (entry.is_file(), _scan_tier(entry), entry.name.lower()))
     except PermissionError:
         log_cb(f"Permission denied: {root}", "warn")
         return node
 
     for entry in entries:
         if counter[0] >= limit:
-            log_cb(f"Reached {limit}-file limit. Scan stopped. Raise it with --max-files.", "warn")
+            if len(counter) == 1:  # say it once, not once per folder on the way back up
+                counter.append(1)
+                log_cb(f"Reached {limit}-file limit. Scan stopped. Raise it with --max-files.", "warn")
+            node["dirs"].sort(key=lambda sub: sub["name"].lower())
             return node
 
         if entry.is_symlink() and not _symlink_stays_inside(entry, project_root):
@@ -584,6 +601,7 @@ def build_tree(
             }
         )
 
+    node["dirs"].sort(key=lambda sub: sub["name"].lower())  # display order stays alphabetical
     return node
 
 

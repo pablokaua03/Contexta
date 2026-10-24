@@ -22,6 +22,7 @@ class ExportConfig:
     focus_query: str = ""
     locked_fields: tuple[str, ...] = ()
     token_budget: int | None = None
+    graph_signals: dict | None = None  # per-file rank / churn / focus hints from the project graph
 
 @dataclass
 class FileInsight:
@@ -50,6 +51,9 @@ class FileInsight:
     focus_raw: float = 0.0
     selection_reasons: list[str] = field(default_factory=list)
     render_compression: str | None = None
+    graph_rank: float = 0.0
+    graph_hot: float = 0.0
+    graph_focus: float = 0.0
 
     @property
     def name(self) -> str:

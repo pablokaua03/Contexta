@@ -44,6 +44,7 @@ _KNOWN_KEYS = frozenset(
         "max_files",
         "redact_allow",
         "redact_entropy",
+        "graph",
     }
 )
 
@@ -74,6 +75,7 @@ class ContextaConfig:
     max_files: int | None = None
     redact_allow: list[str] = field(default_factory=list)
     redact_entropy: bool | None = None
+    graph: bool | None = None
     warnings: list[str] = field(default_factory=list)
     source: str = ""
 
@@ -99,6 +101,7 @@ class ContextaConfig:
             "max_tokens",
             "max_files",
             "redact_entropy",
+            "graph",
         ):
             value = getattr(other, key)
             if value is not None:
@@ -204,6 +207,7 @@ def _parse_table(data: dict, source: str) -> ContextaConfig:
     config.max_files = _optional_positive_int(data, "max_files", source)
     config.redact_allow = _optional_str_list(data, "redact_allow", source)
     config.redact_entropy = _optional_bool(data, "redact_entropy", source)
+    config.graph = _optional_bool(data, "graph", source)
     _validate_choices(config, source)
     return config
 
@@ -310,6 +314,10 @@ ignore = []
 
 # Flag random-looking strings as secrets even without a known prefix.
 # redact_entropy = true
+
+# Keep a local project graph in .contexta/graph.db (git-ignored by itself). It
+# ranks files for --budget and --focus and powers `contexta graph`.
+# graph = true
 """
 
 STARTER_IGNORE_FILE = """\
