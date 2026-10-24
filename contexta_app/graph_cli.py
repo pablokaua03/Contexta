@@ -97,6 +97,34 @@ def _rows(rows: list[dict], fields: list[str]) -> str:
     return "".join("  " + "  ".join(str(row.get(f, "")) for f in fields).rstrip() + "\n" for row in rows)
 
 
+def format_status(info: dict, name: str) -> str:
+    lines = [f"Graph for {name} (Contexta {__version__})"]
+    lines.append(f"  {info['files']} files, {info['symbols']} symbols, {info['tests']} tests, {info['commits']} commits read")
+    lines.append("  edges: " + (", ".join(f"{k} {v}" for k, v in sorted(info["edges"].items())) or "none"))
+    lines.append("  parsers: " + ", ".join(f"{k} {v}" for k, v in sorted(info["parsers"].items())))
+    lines.append(f"  updated {info['updated_at']}   db {info['db']}")
+    return "\n".join(lines) + "\n"
+
+
+def format_impact(result: dict) -> str:
+    text = f"Changed: {', '.join(result['changed']) or '(none found in graph)'}\n"
+    text += f"\nImpacted files ({result['impacted_total']}):\n" + _rows(result["impacted"], ["path", "distance", "via"])
+    text += f"\nTests to run ({result['tests_total']}):\n" + _rows(result["tests"], ["path", "reason"])
+    if result["cochanged"]:
+        text += "\nUsually change together:\n" + _rows(result["cochanged"], ["path", "times_together"])
+    return text
+
+
+def format_hot(rows: list[dict]) -> str:
+    return ("Most changed files\n" + _rows(rows, ["commits", "last_changed", "path"])) if rows else "No git history found.\n"
+
+
+def format_symbols(rows: list[dict]) -> str:
+    for row in rows:
+        row["where"] = f"{row['path']}:{row['line']}"
+    return _rows(rows, ["where", "kind", "signature"]) if rows else "No symbols match.\n"
+
+
 def run_graph(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -131,12 +159,7 @@ def run_graph(argv: list[str]) -> int:
 
         if args.op == "status":
             info = graph.stats()
-            lines = [f"Graph for {root.resolve().name} (Contexta {__version__})"]
-            lines.append(f"  {info['files']} files, {info['symbols']} symbols, {info['tests']} tests, {info['commits']} commits read")
-            lines.append("  edges: " + (", ".join(f"{k} {v}" for k, v in sorted(info["edges"].items())) or "none"))
-            lines.append("  parsers: " + ", ".join(f"{k} {v}" for k, v in sorted(info["parsers"].items())))
-            lines.append(f"  updated {info['updated_at']}   db {info['db']}")
-            _emit(args, info, "\n".join(lines) + "\n")
+            _emit(args, info, format_status(info, root.resolve().name))
         elif args.op in {"dependents", "dependencies"}:
             fn = graph.dependents if args.op == "dependents" else graph.dependencies
             rows = fn(args.target, depth=args.depth)
@@ -155,24 +178,18 @@ def run_graph(argv: list[str]) -> int:
             if args.tests_only and not args.json:
                 sys.stdout.write("".join(t["path"] + "\n" for t in result["tests"]))
             else:
-                text = f"Changed: {', '.join(result['changed']) or '(none found in graph)'}\n"
-                text += f"\nImpacted files ({result['impacted_total']}):\n" + _rows(result["impacted"], ["path", "distance", "via"])
-                text += f"\nTests to run ({result['tests_total']}):\n" + _rows(result["tests"], ["path", "reason"])
-                if result["cochanged"]:
-                    text += "\nUsually change together:\n" + _rows(result["cochanged"], ["path", "times_together"])
-                _emit(args, result, text)
+                _emit(args, result, format_impact(result))
         elif args.op == "changed":
             result = graph.changed_since(args.since)
             text = f"Changed {result['since']}: {len(result['files'])} file(s)\n" + _rows(result["files"], ["path", "kind", "dependents"])
             _emit(args, result, text)
         elif args.op == "hot":
             rows = graph.hot_files(args.limit, since_days=args.days, kind=None if args.all_kinds else "source")
-            _emit(args, rows, ("Most changed files\n" + _rows(rows, ["commits", "last_changed", "path"])) if rows else "No git history found.\n")
+            _emit(args, rows, format_hot(rows))
         elif args.op == "symbols":
             rows = graph.search_symbols(args.query, args.limit, args.kind)
-            for row in rows:
-                row["where"] = f"{row['path']}:{row['line']}"
-            _emit(args, rows, _rows(rows, ["where", "kind", "signature"]) if rows else "No symbols match.\n")
+            text = format_symbols(rows)  # also adds "where" to each row, which --json prints
+            _emit(args, rows, text)
         elif args.op == "map":
             result = graph.repo_map(args.budget, args.focus)
             _emit(args, result, result["text"] + f"\n~{result['tokens']} tokens, {result['files']} files, {result['symbols']} symbols\n")
