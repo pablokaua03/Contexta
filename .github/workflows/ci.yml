@@ -30,13 +30,16 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
 
       - name: Linux GUI dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb python3-tk
 
       - name: Install
-        run: python -m pip install --upgrade pip && python -m pip install -e . pytest hatchling
+        run: python -m pip install --upgrade pip && python -m pip install -e . -r requirements-dev.txt
 
       - name: Test (Linux, virtual display)
         if: runner.os == 'Linux'

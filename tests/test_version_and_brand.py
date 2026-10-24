@@ -107,7 +107,8 @@ def png_size(blob: bytes) -> tuple[int, int]:
 
 
 def pixel(blob: bytes, x: int, y: int):
-    from PIL import Image
+    # Pillow is a development dependency (requirements-dev.txt), not a runtime one: skip without it.
+    Image = pytest.importorskip("PIL.Image")
 
     return Image.open(io.BytesIO(blob)).convert("RGBA").getpixel((x, y))
 

@@ -1,0 +1,6 @@
+# Everything the test suite uses on top of the runtime dependencies in pyproject.toml.
+#   python -m pip install -e . -r requirements-dev.txt
+pytest>=8
+hatchling             # tests/test_packaging.py builds the wheel
+pillow>=10            # logo / icon checks in tests/test_version_and_brand.py
+pyyaml>=6             # tests/test_action.py reads action.yml and the workflows
