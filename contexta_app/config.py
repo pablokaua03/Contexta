@@ -42,6 +42,8 @@ _KNOWN_KEYS = frozenset(
         "ignore",
         "max_tokens",
         "max_files",
+        "redact_allow",
+        "redact_entropy",
     }
 )
 
@@ -70,6 +72,8 @@ class ContextaConfig:
     ignore: list[str] = field(default_factory=list)
     max_tokens: int | None = None
     max_files: int | None = None
+    redact_allow: list[str] = field(default_factory=list)
+    redact_entropy: bool | None = None
     warnings: list[str] = field(default_factory=list)
     source: str = ""
 
@@ -94,12 +98,15 @@ class ContextaConfig:
             "staged",
             "max_tokens",
             "max_files",
+            "redact_entropy",
         ):
             value = getattr(other, key)
             if value is not None:
                 setattr(merged, key, value)
         if other.ignore:
             merged.ignore = list(other.ignore)
+        if other.redact_allow:
+            merged.redact_allow = list(other.redact_allow)
         merged.warnings = [*self.warnings, *other.warnings]
         merged.source = other.source or self.source
         return merged
@@ -195,6 +202,8 @@ def _parse_table(data: dict, source: str) -> ContextaConfig:
     config.ignore = _optional_str_list(data, "ignore", source)
     config.max_tokens = _optional_positive_int(data, "max_tokens", source)
     config.max_files = _optional_positive_int(data, "max_files", source)
+    config.redact_allow = _optional_str_list(data, "redact_allow", source)
+    config.redact_entropy = _optional_bool(data, "redact_entropy", source)
     _validate_choices(config, source)
     return config
 
@@ -294,6 +303,13 @@ ignore = []
 
 # Stop scanning after this many files (default 2000).
 # max_files = 5000
+
+# Values the redactor must leave alone (exact match), for example a public
+# test key. A line containing "contexta:allow" is skipped too.
+# redact_allow = []
+
+# Flag random-looking strings as secrets even without a known prefix.
+# redact_entropy = true
 """
 
 STARTER_IGNORE_FILE = """\

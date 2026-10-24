@@ -28,7 +28,7 @@ from contexta_app.context_engine import (
     extract_signatures,
     related_test_score,
 )
-from contexta_app.redaction import redact_secrets
+from contexta_app.redaction import find_secrets, redact_secrets
 from contexta_app.selector import fit_to_budget, tiers_for
 from contexta_app.scanner import (
     GitError,
@@ -76,11 +76,13 @@ def _finalize_document(
     log_cb,
     stats: dict | None,
     compression: str,
+    redact_allow: tuple[str, ...] = (),
+    redact_entropy: bool = True,
 ) -> str:
     """Redact secrets, then attach the token and model-budget footer."""
     redactions = 0
     if redact:
-        body, redactions = redact_secrets(body)
+        body, redactions = redact_secrets(body, allow=redact_allow, entropy=redact_entropy)
     tokens = estimate_tokens(body)
     token_hint = token_label(tokens)
     summary = budget_summary(tokens, ai_profile)
@@ -1624,6 +1626,8 @@ def _render_raw_files(
     redact: bool = True,
     base_ref: str | None = None,
     stats: dict | None = None,
+    redact_allow: tuple[str, ...] = (),
+    redact_entropy: bool = True,
 ) -> str:
     selected_tree = build_diff_tree(
         analysis.selected_paths,
@@ -1695,6 +1699,8 @@ def _render_raw_files(
         log_cb=log_cb,
         stats=stats,
         compression=analysis.config.compression,
+        redact_allow=redact_allow,
+        redact_entropy=redact_entropy,
     )
 
 
@@ -1719,6 +1725,9 @@ def _generate_markdown_once(
     max_files: int | None = None,
     payload_budget: int | None = None,
     token_budget: int | None = None,
+    redact_allow: tuple[str, ...] = (),
+    redact_entropy: bool = True,
+    dry_run: bool = False,
 ) -> str:
     if log_cb is None:
         log_cb = lambda msg, tag="": None
@@ -1778,6 +1787,16 @@ def _generate_markdown_once(
         stats["budget_report"] = analysis.budget_report
         stats["dropped"] = [item.relpath.as_posix() for item in analysis.dropped_files]
 
+    if dry_run:
+        findings = []
+        for item in analysis.selected_files:
+            for found in find_secrets(item.content, allow=redact_allow, entropy=redact_entropy):
+                findings.append({"file": item.relpath.as_posix(), "line": found.line, "rule": found.kind, "name": found.detail})
+        if stats is not None:
+            stats["findings"] = findings
+            stats["files_checked"] = len(analysis.selected_files)
+        return ""
+
     if config.pack_profile == "raw_files":
         return _render_raw_files(
             project_path,
@@ -1787,6 +1806,8 @@ def _generate_markdown_once(
             redact=redact_secrets,
             base_ref=base_ref,
             stats=stats,
+            redact_allow=redact_allow,
+            redact_entropy=redact_entropy,
         )
 
     selected_tree = build_diff_tree(
@@ -1907,6 +1928,8 @@ def _generate_markdown_once(
         log_cb=log_cb,
         stats=stats,
         compression=analysis.config.compression,
+        redact_allow=redact_allow,
+        redact_entropy=redact_entropy,
     )
 
 
@@ -2011,7 +2034,7 @@ def generate_markdown(
     the files take. If the finished pack is over budget, the measured overhead
     replaces the guess and the selection is redone.
     """
-    if not token_budget:
+    if not token_budget or kwargs.get("dry_run"):
         return _generate_markdown_once(project_path, *args, stats=stats, **kwargs)
     if token_budget <= 0:
         raise ValueError("token budget must be a positive integer")

@@ -11,6 +11,7 @@ Start via:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -22,8 +23,92 @@ from contexta_app.context_engine import (
     ExportConfig,
 )
 from contexta_app.redaction import redact_secrets
+from contexta_app.safety import is_sensitive_path
 from contexta_app.renderer import generate_markdown
 from contexta_app.scanner import GitError, get_language, read_file_safe
+
+_ROOTS: list[Path] | None = None
+
+
+def configure_roots(roots: list[str | Path] | None) -> list[Path]:
+    """Set the folders the tools may read. ``None`` goes back to the default."""
+    global _ROOTS
+    _ROOTS = None if roots is None else [Path(r).expanduser().resolve() for r in roots]
+    return allowed_roots()
+
+
+def allowed_roots() -> list[Path]:
+    """Configured roots, else CONTEXTA_ROOT (path-separated), else the working directory."""
+    if _ROOTS is not None:
+        return list(_ROOTS)
+    raw = os.environ.get("CONTEXTA_ROOT", "").strip()
+    if raw:
+        return [Path(part).expanduser().resolve() for part in raw.split(os.pathsep) if part.strip()]
+    return [Path.cwd().resolve()]
+
+
+def parse_serve_args(args: list[str]) -> list[str]:
+    """Pull ``--root DIR`` (repeatable, or ``--root=DIR``) out of ``contexta serve`` arguments."""
+    roots: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--root":
+            if i + 1 >= len(args):
+                raise SystemExit("contexta serve: --root needs a folder")
+            roots.append(args[i + 1])
+            i += 2
+            continue
+        if arg.startswith("--root="):
+            roots.append(arg.split("=", 1)[1])
+        else:
+            raise SystemExit(f"contexta serve: unknown option {arg!r}. Usage: contexta serve [--root DIR]")
+        i += 1
+    return roots
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def resolve_project(project_path: str) -> tuple[Path | None, str]:
+    """Resolve ``project_path`` and require it to sit inside an allowed root.
+
+    Returns ``(path, "")`` or ``(None, error_message)``.
+    """
+    try:
+        path = Path(project_path).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None, f"Error: '{project_path}' is not a valid directory."
+    if not path.is_dir():
+        return None, f"Error: '{project_path}' is not a valid directory."
+    if not any(_is_within(path, root) for root in allowed_roots()):
+        names = ", ".join(str(root) for root in allowed_roots())
+        return None, (
+            f"Error: '{project_path}' is outside the folders this server may read ({names}). "
+            "Start the server with --root <folder> to allow it."
+        )
+    return path, ""
+
+
+def resolve_file(project: Path, rel: str) -> tuple[Path | None, str]:
+    """Resolve ``rel`` inside ``project``. Rejects escapes, symlinks out, and credential files."""
+    if not rel or "\x00" in rel:
+        return None, "Not a valid file path."
+    try:
+        full = (project / rel).resolve()
+    except (OSError, RuntimeError):
+        return None, "Not a valid file path."
+    if not _is_within(full, project):
+        return None, "Path is outside the project folder."
+    if is_sensitive_path(full.relative_to(project)):
+        return None, "Credential file. Contexta does not serve these."
+    return full, ""
+
 
 mcp = FastMCP(
     "Contexta",
@@ -76,9 +161,9 @@ def generate_context(
         redact: Replace likely secrets before returning the pack. On by default.
         budget: Token budget. Files are ranked and cut until the pack fits. 0 means no limit.
     """
-    path = Path(project_path).resolve()
-    if not path.is_dir():
-        return f"Error: '{project_path}' is not a valid directory."
+    path, error = resolve_project(project_path)
+    if path is None:
+        return error
     if budget < 0:
         return "Error: budget must be zero or a positive number of tokens."
 
@@ -112,9 +197,9 @@ def scan_project(project_path: str) -> str:
     Args:
         project_path: Absolute path to the project folder.
     """
-    path = Path(project_path).resolve()
-    if not path.is_dir():
-        return f"Error: '{project_path}' is not a valid directory."
+    path, error = resolve_project(project_path)
+    if path is None:
+        return error
 
     try:
         analysis, _, file_count, cached = get_analysis(path)
@@ -165,9 +250,9 @@ def get_architecture(project_path: str) -> str:
     Args:
         project_path: Absolute path to the project folder.
     """
-    path = Path(project_path).resolve()
-    if not path.is_dir():
-        return f"Error: '{project_path}' is not a valid directory."
+    path, error = resolve_project(project_path)
+    if path is None:
+        return error
 
     try:
         analysis, _, _, cached = get_analysis(path)
@@ -225,9 +310,9 @@ def find_files(project_path: str, query: str) -> str:
         query: Search term — matches file names and paths.
                Examples: "auth", "controller", ".tsx", "test_user".
     """
-    path = Path(project_path).resolve()
-    if not path.is_dir():
-        return f"Error: '{project_path}' is not a valid directory."
+    path, error = resolve_project(project_path)
+    if path is None:
+        return error
 
     try:
         analysis, _, _, _ = get_analysis(path)
@@ -260,13 +345,16 @@ def read_files(project_path: str, files: list[str]) -> str:
         files: Relative file paths to read (e.g. ["src/main.py", "config.json"]).
                Max 20 files per call.
     """
-    path = Path(project_path).resolve()
-    if not path.is_dir():
-        return f"Error: '{project_path}' is not a valid directory."
+    path, error = resolve_project(project_path)
+    if path is None:
+        return error
 
     results = []
     for rel in files[:20]:
-        full = path / rel
+        full, problem = resolve_file(path, rel)
+        if full is None:
+            results.append(f"## `{rel}`\n\n{problem}\n")
+            continue
         if not full.is_file():
             results.append(f"## `{rel}`\n\nFile not found.\n")
             continue
@@ -338,9 +426,9 @@ def refresh_cache(project_path: str = "") -> str:
         count = invalidate()
         return f"Cleared all caches ({count} entries)."
 
-    path = Path(project_path).resolve()
-    if not path.is_dir():
-        return f"Error: '{project_path}' is not a valid directory."
+    path, error = resolve_project(project_path)
+    if path is None:
+        return error
 
     invalidate(path)
     analysis, _, file_count, _ = get_analysis(path, force_refresh=True)

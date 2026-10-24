@@ -5,6 +5,7 @@ cli.py - Command-line interface for Contexta.
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -53,6 +54,9 @@ class RunPlan:
     focus_query: str
     locked_fields: tuple[str, ...]
     redact_secrets: bool
+    redact_allow: tuple[str, ...]
+    redact_entropy: bool
+    dry_run: bool
     base_ref: str | None
     output_format: str
     output: str | None
@@ -65,6 +69,16 @@ class RunPlan:
     api_key: str
     model: str
     warnings: tuple[str, ...]
+
+
+class _RedactFlag(argparse.Action):
+    """``--redact`` and ``--no-redact`` write one tri-state value and refuse to be combined."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        previous = getattr(namespace, self.dest, None)
+        if previous is not None and previous != self.const:
+            parser.error("use either --redact or --no-redact, not both")
+        setattr(namespace, self.dest, self.const)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -126,8 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
     output.add_argument("--unknown", action="store_true", help="Include files with unrecognised extensions")
 
     safety = parser.add_argument_group("safety")
-    safety.add_argument("--redact", action="store_true", help="Force secret redaction on, even if a config file disables it")
-    safety.add_argument("--no-redact", action="store_true", help="Keep secret-like values in the export. Redaction is on by default")
+    safety.add_argument("--redact", dest="redact", action=_RedactFlag, nargs=0, const=True, default=None,
+                        help="Force secret redaction on, even if a config file turns it off. This is the default")
+    safety.add_argument("--no-redact", dest="redact", action=_RedactFlag, nargs=0, const=False,
+                        help="Keep secret-like values in the export. Redaction is on by default")
+    safety.add_argument("--dry-run", action="store_true",
+                        help="List what would be redacted (file, line, rule; never the value) and write no pack")
 
     ai = parser.add_argument_group("ai api")
     ai.add_argument("--ask", default="", help="Send the pack and this prompt to an AI API, then print the reply")
@@ -219,8 +237,6 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         )
     cfg = user_cfg.overlay(project_cfg)
 
-    if args.redact and args.no_redact:
-        raise ConfigError("Use either --redact or --no-redact, not both.")
     if args.max_tokens is not None and args.max_tokens <= 0:
         raise ConfigError("--budget must be a positive integer.")
     if args.max_files is not None and args.max_files <= 0:
@@ -247,10 +263,8 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
     if diff_mode and mode == "full" and "context_mode" not in locked:
         mode = "diff"
 
-    if args.no_redact:
-        redact = False
-    elif args.redact:
-        redact = True
+    if args.redact is not None:
+        redact = args.redact
     elif cfg.redact is not None:
         redact = cfg.redact
     else:
@@ -278,6 +292,9 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         focus_query=focus or "",
         locked_fields=tuple(dict.fromkeys(locked)),
         redact_secrets=redact,
+        redact_allow=tuple(cfg.redact_allow),
+        redact_entropy=True if cfg.redact_entropy is None else cfg.redact_entropy,
+        dry_run=bool(args.dry_run),
         base_ref=base,
         output_format=output_format,
         output=output,
@@ -381,6 +398,8 @@ def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
             pack_profile=plan.pack_profile,
             focus_query=plan.focus_query,
             redact_secrets=plan.redact_secrets,
+            redact_allow=plan.redact_allow,
+            redact_entropy=plan.redact_entropy,
             base_ref=plan.base_ref,
             max_files=plan.max_files,
             token_budget=plan.max_tokens,
@@ -472,6 +491,54 @@ def _send_ask(plan: RunPlan, markdown: str, status) -> None:
     status(response)
 
 
+def _dry_run(plan: RunPlan, status) -> None:
+    """Report what redaction would change. Values are never printed."""
+    stats: dict = {}
+    export_pack(
+        plan.project,
+        stats=stats,
+        include_hidden=plan.include_hidden,
+        include_unknown=plan.include_unknown,
+        diff_mode=plan.diff_mode,
+        staged_only=plan.staged_only,
+        system_prompt=plan.system_prompt,
+        context_mode=plan.context_mode,
+        ai_profile=plan.ai_profile,
+        task_profile=plan.task_profile,
+        compression=plan.compression,
+        pack_profile=plan.pack_profile,
+        focus_query=plan.focus_query,
+        redact_secrets=plan.redact_secrets,
+        redact_allow=plan.redact_allow,
+        redact_entropy=plan.redact_entropy,
+        base_ref=plan.base_ref,
+        max_files=plan.max_files,
+        locked_fields=tuple(plan.locked_fields),
+        dry_run=True,
+        log_cb=lambda msg, tag="": status(msg, tag or "info"),
+    )
+    findings = stats.get("findings") or []
+    files = sorted({row["file"] for row in findings})
+    if plan.output_format == "json":
+        text = json.dumps(
+            {"format": "contexta.dry-run.v1", "files_checked": stats.get("files_checked", 0),
+             "redaction_enabled": plan.redact_secrets, "findings": findings},
+            indent=2,
+        ) + "\n"
+        sys.stdout.write(text)
+        return
+    verb = "would be redacted" if plan.redact_secrets else "would NOT be redacted (--no-redact is on)"
+    lines = [f"Dry run: {len(findings)} possible secret(s) in {len(files)} of {stats.get('files_checked', 0)} file(s) {verb}."]
+    for row in findings:
+        name = f" ({row['name']})" if row["name"] else ""
+        lines.append(f"  {row['file']}:{row['line']}  {row['rule']}{name}")
+    if not findings:
+        lines.append("  Nothing to redact.")
+    lines.append("No pack was written. Values are never shown here.")
+    lines.append("To keep a value, add it to redact_allow in contexta.toml or put 'contexta:allow' on its line.")
+    sys.stdout.write("\n".join(lines) + "\n")
+
+
 def _fail(message: str) -> None:
     print(message, file=sys.stderr)
     raise SystemExit(1)
@@ -524,6 +591,13 @@ def run_cli() -> None:
         banner_stream.write(banner + "\n")
     for warning in plan.warnings:
         status(f"Warning: {warning}", "warn")
+
+    if plan.dry_run:
+        try:
+            _dry_run(plan, status)
+        except (ConfigError, GitError, ValueError) as exc:
+            _fail(str(exc))
+        return
 
     try:
         text, stats = _render_with_budget(plan, status)

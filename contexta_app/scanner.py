@@ -13,6 +13,8 @@ from pathlib import Path
 from charset_normalizer import from_bytes
 from pathspec import PathSpec
 
+from contexta_app.safety import is_sensitive_path
+
 
 CODE_EXTENSIONS: dict[str, str] = {
     ".html": "html",
@@ -477,6 +479,12 @@ def should_ignore_file(
     gitignore_patterns: list[str] | None = None,
 ) -> bool:
     name = path.name
+    try:
+        relative = path.relative_to(root) if root else Path(name)
+    except ValueError:
+        relative = Path(name)
+    if is_sensitive_path(relative):
+        return True
     if not include_hidden and name.startswith("."):
         return True
     if name in IGNORE_FILES:
@@ -489,6 +497,20 @@ def should_ignore_file(
     if get_language(path) is None and not include_unknown:
         return True
     return False
+
+
+def _symlink_stays_inside(entry: Path, project_root: Path) -> bool:
+    """A symlink is followed only when its target is inside the project folder."""
+    try:
+        target = entry.resolve()
+        base = project_root.resolve()
+    except (OSError, RuntimeError):
+        return False
+    try:
+        target.relative_to(base)
+        return True
+    except ValueError:
+        return False
 
 
 def build_tree(
@@ -518,6 +540,9 @@ def build_tree(
         if counter[0] >= limit:
             log_cb(f"Reached {limit}-file limit. Scan stopped. Raise it with --max-files.", "warn")
             return node
+
+        if entry.is_symlink() and not _symlink_stays_inside(entry, project_root):
+            continue
 
         if entry.is_dir():
             if should_ignore_dir(entry.name, include_hidden):
