@@ -46,6 +46,15 @@ re-parsed only when its hash changed.
   `CONTEXTA_GRAPH_DIR` moves it elsewhere. `--no-graph`, or `graph = false` in `contexta.toml`, turns it
   off for packs, and `contexta graph clear` deletes it.
 
+## In the desktop app
+
+The **Project memory** card shows the graph's status and runs Update, Hot files, Symbols, Impact and
+Open map without a terminal. Per analysis, **Save this analysis to Contexta memory** and **Memory to
+use** decide whether a run writes the graph, only reads it, or ignores it. The CLI equivalents are
+`--no-memory`, `--memory PATH` and `--memory-read-only` (`memory_path` and `memory_save` in
+`contexta.toml`). A memory kept outside `.contexta/` carries a stamp of its project, and another
+project's run only reads it.
+
 ## How packs use it
 
 - **Ranking.** Files get a weighted PageRank over imports and calls. With `--budget` the rank and the

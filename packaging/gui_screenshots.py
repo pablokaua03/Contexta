@@ -4,7 +4,7 @@ Regenerate the README screenshots of the desktop app (1200x820) from the real GU
 
     xvfb-run -a -s "-screen 0 1200x820x24" python packaging/gui_screenshots.py [OUT_DIR]
 
-Writes dark.png, white.png, empty.png, result.png and error.png into OUT_DIR (default: assets/,
+Writes dark.png, white.png, empty.png, result.png, memory.png and error.png into OUT_DIR (default: assets/,
 error.png goes to docs/images/ when OUT_DIR is the default). Uses a throwaway project called
 sample-app and relative paths, so no machine-specific path shows up in the images.
 Needs Linux with Xvfb, Tk and Pillow. Run it from the repository root.
@@ -49,6 +49,7 @@ def main() -> int:
     error_dir.mkdir(parents=True, exist_ok=True)
 
     work = Path(tempfile.mkdtemp(prefix="contexta-shots-"))
+    os.environ["CONTEXTA_HOME"] = str(work / "home")  # the app saves its memory choice there, not in your real ~/.contexta
     for rel, text in SAMPLE.items():
         target = work / "sample-app" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -77,6 +78,7 @@ def main() -> int:
         app._set_status("sample-app", "tag_bg", "tag_fg")
         app._set_view("preview")
         app._refresh_preview()
+        app._refresh_memory_status()
 
     settle(1.2)
     if theme.C["mode"] != "dark":
@@ -86,12 +88,29 @@ def main() -> int:
 
     choose_project()
     settle()
-    grab(out_dir / "dark.png")
+    def pump_until_idle() -> None:
+        settle(0.3)
+        while app._mem_busy:
+            settle(0.1)
+        settle(0.5)
+
+    grab(out_dir / "dark.png")  # a project with no memory yet: the card offers to build it
 
     app._toggle_theme()
     settle(1.0)
     grab(out_dir / "white.png")
     app._toggle_theme()
+    settle(0.6)
+
+    # Project memory: build it from the card, then ask what a change to utils.py reaches.
+    app._memory_update()
+    pump_until_idle()
+    app._ask_text = lambda *args: "src/utils.py"
+    app._memory_impact()
+    pump_until_idle()
+    app._controls_scroll._canvas.yview_moveto(0)
+    grab(out_dir / "memory.png")
+    app._set_view("preview")
     settle(0.6)
 
     # Same work as the Create button, run in this thread so the screenshot script needs no main loop.

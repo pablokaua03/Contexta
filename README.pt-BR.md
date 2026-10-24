@@ -217,7 +217,9 @@ contexta --configure-ai
 | Flag | Descrição |
 |---|---|
 | `--for` | `bugfix`, `review` (contra a main), `onboard` ou `refactor`. Escolhe o pack para você |
-| `--no-graph` | Não lê nem grava `.contexta/graph.db` (também `graph = false` no `contexta.toml`) |
+| `--no-graph` / `--no-memory` | Não lê nem grava `.contexta/graph.db` (também `graph = false` no `contexta.toml`) |
+| `--memory PATH` | Guarda a memória desta execução em outra pasta (ou arquivo `graph.db`). Uma memória que pertence a outro projeto só é lida, nunca alterada (também `memory_path` no `contexta.toml`) |
+| `--memory-read-only` | Usa uma memória existente para ranquear arquivos mas nunca grava, e não cria nada (também `memory_save = false`) |
 | `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `bugfix`, `backend`, `frontend`, `changes_related`, `refactor`, `raw_files` |
 | `--mode` | Modo: `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
 | `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
@@ -260,6 +262,16 @@ Os packs usam o grafo: com `--budget`, os arquivos dos quais o projeto mais depe
 
 <p align="center">
   <img alt="Saída do terminal de contexta graph update, graph impact de um arquivo de sessão listando arquivos impactados e testes para rodar, e graph hot com os arquivos que mais mudam" src="assets/graph.png" width="860">
+</p>
+
+### Memória do projeto no app
+
+O app desktop tem um card **Project memory** logo abaixo da pasta do projeto. Ele mostra se o projeto tem memória (arquivos, símbolos, arestas, última atualização) e tem cinco botões: **Update memory** (roda em segundo plano, a janela não trava), **Hot files**, **Symbols**, **Impact** (pede um arquivo) e **Open map** (salva um mapa em Markdown ao lado dos seus packs e abre). As respostas aparecem na aba **Memory**, à direita. Não precisa de modelo nem de rede.
+
+Cada análise tem dois controles. **Save this analysis to Contexta memory** (ligado por padrão) deixa a execução atualizar a memória; desligado, a execução ainda pode ler uma memória existente para ranquear arquivos, mas nunca grava. **Memory to use** escolhe a memória deste projeto, a memória de outra pasta que você escolher com Browse, ou nenhuma. A escolha fica salva em `~/.contexta/gui.json`. A linha de comando tem as mesmas chaves: `--no-memory`, `--memory PATH`, `--memory-read-only`.
+
+<p align="center">
+  <img alt="App desktop do Contexta: o card Project memory com status, botões Update memory, Hot files, Symbols, Impact e Open map, a chave de salvar e o seletor de memória, e a aba Memory mostrando quais arquivos e testes uma mudança em utils.py alcança" src="assets/memory.png" width="860">
 </p>
 
 ### No pull request
