@@ -17,6 +17,7 @@ A fix release. **If you installed 2.2.0 or 2.0.0 from PyPI, `contexta` did not s
 - A directory symlink inside the project (`self -> .`) was followed until the 2000-file cap, listing the same files thousands of times. Directory symlinks that stay inside the project are no longer walked; file symlinks and the rule that links leaving the project are ignored are unchanged
 - The project graph shared the 2000-file cap of a pack and hid it, so on a larger repo `graph impact` answered "(none found in graph)". The graph now has its own limit (50000, or `CONTEXTA_GRAPH_MAX_FILES`), and `graph update` and `graph status` warn when it is reached
 - Any desktop Python project was described as "Scan local repositories and generate curated context packs", Contexta's own purpose
+- Python files are now read with `ast` whether or not the optional tree-sitter is installed. Without it, `from .util import slugify` was seen as importing `.util` only, and with it as importing `slugify` as if it were a module (relative imports never resolved to a local file). `--focus slugify` therefore selected different files depending on what happened to be installed. Modules and imported names are now kept apart, and `--focus` matches both
 
 ### Added
 - **Token budget** box in the desktop app (`8000`, `8,000` or `32k`), using the same fitter as `--budget`
