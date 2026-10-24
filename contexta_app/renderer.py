@@ -28,7 +28,7 @@ from contexta_app.context_engine import (
     extract_signatures,
     related_test_score,
 )
-from contexta_app.graph import ProjectGraph
+from contexta_app.graph import MemoryOwnerError, ProjectGraph
 from contexta_app.redaction import find_secrets, redact_secrets
 from contexta_app.selector import fit_to_budget, tiers_for
 from contexta_app.scanner import (
@@ -1730,6 +1730,8 @@ def _generate_markdown_once(
     redact_entropy: bool = True,
     dry_run: bool = False,
     use_graph: bool = False,
+    graph_db: Path | None = None,
+    graph_readonly: bool = False,
 ) -> str:
     if log_cb is None:
         log_cb = lambda msg, tag="": None
@@ -1786,6 +1788,7 @@ def _generate_markdown_once(
         analysis_tree, config = _apply_graph(
             project_path, full_tree, config, changed_files, log_cb, stats,
             owns_scan=not (include_hidden or include_unknown or max_files),
+            db_path=graph_db, readonly=graph_readonly,
         )
 
     fit_selection = None
@@ -1962,22 +1965,38 @@ def _prune_tree(node: dict, root: Path, keep: set[str]) -> dict:
     return {**node, "files": files, "dirs": dirs}
 
 
-def _apply_graph(project_path, full_tree, config, changed_files, log_cb, stats, owns_scan: bool):
+def _apply_graph(project_path, full_tree, config, changed_files, log_cb, stats, owns_scan: bool,
+                 db_path: Path | None = None, readonly: bool = False):
     """Update the project graph, then use it to rank files. On a large repo with a budget or a focus,
-    analysis covers the files the graph ranks highest instead of every file. Never fails the pack."""
+    analysis covers the files the graph ranks highest instead of every file. Never fails the pack.
+
+    ``db_path`` picks another memory file. ``readonly`` reads an existing memory for ranking and never writes
+    it. A memory that belongs to another project is used read-only too."""
     try:
         from contexta_app.engine.insight import flatten_tree
 
-        graph = ProjectGraph(project_path)
+        graph = ProjectGraph(project_path, db_path, readonly=readonly)
         try:
             all_paths = flatten_tree(full_tree)
-            result = graph.update(files=all_paths if owns_scan else None)
-            if result.added or result.changed or result.removed:
-                log_cb(result.summary(), "muted")
+            if not readonly:
+                try:
+                    result = graph.update(files=all_paths if owns_scan else None)
+                except MemoryOwnerError as exc:
+                    log_cb(f"{exc} Using it read-only; it was not changed.", "warn")
+                    graph.close()
+                    readonly = True
+                    graph = ProjectGraph(project_path, db_path, readonly=True)
+                else:
+                    if result.added or result.changed or result.removed:
+                        log_cb(result.summary(), "muted")
+            if readonly and not graph.db_path.is_file():
+                log_cb("No project memory to read yet; continuing without it.", "muted")
+                return full_tree, config
             focus = config.focus_query.strip() or None
             signals = graph.signals_for_pack(focus)
             tree = full_tree
-            if (config.token_budget or focus) and len(all_paths) > PREFILTER_MIN_FILES:
+            # A read-only memory may be out of date, so it ranks files but never trims the scan.
+            if not readonly and (config.token_budget or focus) and len(all_paths) > PREFILTER_MIN_FILES:
                 keep: set[str] = set()
                 for row in graph.rank_files(focus=focus, limit=PREFILTER_KEEP, kinds=("source",)):
                     keep.add(row["path"])

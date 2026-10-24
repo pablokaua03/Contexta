@@ -218,7 +218,9 @@ contexta --configure-ai
 | Flag | Description |
 |---|---|
 | `--for` | `bugfix`, `review` (against main), `onboard` or `refactor`. Picks the pack for you |
-| `--no-graph` | Do not read or write `.contexta/graph.db` (also `graph = false` in `contexta.toml`) |
+| `--no-graph` / `--no-memory` | Do not read or write `.contexta/graph.db` (also `graph = false` in `contexta.toml`) |
+| `--memory PATH` | Keep this run's memory in another folder (or `graph.db` file). A memory that belongs to another project is only read, never changed (also `memory_path` in `contexta.toml`) |
+| `--memory-read-only` | Use an existing memory to rank files but never write it, and create nothing (also `memory_save = false`) |
 | `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `bugfix`, `backend`, `frontend`, `changes_related`, `refactor`, `raw_files` |
 | `--mode` | Context mode: `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
 | `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
@@ -276,6 +278,16 @@ Packs use it: with `--budget`, files the project depends on most are kept first,
 
 <p align="center">
   <img alt="Terminal output of contexta graph update, graph impact for a session file listing impacted files and tests to run, and graph hot listing the most changed files" src="assets/graph.png" width="860">
+</p>
+
+### Project memory in the app
+
+The desktop app has a **Project memory** card under the project folder. It shows whether the project has a memory (files, symbols, edges, last update) and has five buttons: **Update memory** (runs in the background, the window never freezes), **Hot files**, **Symbols**, **Impact** (asks for a file) and **Open map** (saves a Markdown map next to your packs and opens it). Answers appear in the **Memory** tab on the right. It needs no model and no network.
+
+Each analysis has two controls. **Save this analysis to Contexta memory** (on by default) lets the run update the memory; turned off, the run may still read an existing memory to rank files but never writes it. **Memory to use** picks this project's memory, the memory kept in another folder you browse to, or none. Your choice is remembered in `~/.contexta/gui.json`. The command line has the same switches: `--no-memory`, `--memory PATH`, `--memory-read-only`.
+
+<p align="center">
+  <img alt="Contexta desktop app: the Project memory card with status, Update memory, Hot files, Symbols, Impact and Open map buttons, the save toggle and the memory selector, and the Memory tab showing which files and tests a change to utils.py reaches" src="assets/memory.png" width="860">
 </p>
 
 ### In the pull request

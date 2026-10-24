@@ -5,10 +5,14 @@ ui.py - Premium Tkinter GUI for Contexta.
 from __future__ import annotations
 
 import base64
+import os
+import queue
 import struct
+import subprocess
 import sys
 import threading
 import tkinter as tk
+from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, ttk
 
@@ -22,16 +26,28 @@ from contexta_app.context_engine import (
     PACK_OPTIONS,
     TASK_PROFILE_OPTIONS,
 )
+from contexta_app import memory as mem
 from contexta_app.renderer import __version__, generate_markdown, section_titles_for_preview
 from contexta_app.scanner import build_tree, count_files, get_git_changed_files, load_gitignore_patterns
 from contexta_app.theme import C, FB, FBS, FH, FL, FM, FS, FT, ThemeRegistry, contrast_ratio, darken, readable_fg, reg, toggle_theme
 from contexta_app.utils import get_desktop, safe_project_name
 
 try:
-    from contexta_app.embedded_icon_data import EMBEDDED_ICON_PNG_BASE64 as EMBEDDED_ICON_PNG_BASE64_FALLBACK
-except Exception:
-    EMBEDDED_ICON_PNG_BASE64_FALLBACK = ""
+    from contexta_app.embedded_icon_data import (
+        EMBEDDED_ICON_PNG_BASE64,
+        EMBEDDED_LOGO_2X_PNG_BASE64,
+        EMBEDDED_LOGO_PNG_BASE64,
+    )
+except Exception:  # the images are a nicety, never a reason to fail at startup
+    EMBEDDED_ICON_PNG_BASE64 = EMBEDDED_LOGO_PNG_BASE64 = EMBEDDED_LOGO_2X_PNG_BASE64 = ""
 
+
+MEMORY_GUIDE = (
+    "Contexta can remember a project: files, symbols, how they connect and which files change together. It never stores file content, credentials or authors, and it needs no model.\n"
+    "- Update memory builds or refreshes it. Hot files, Symbols, Impact and Open map ask it questions. Answers appear in the Memory tab.\n"
+    "- Save this analysis to Contexta memory: when on, each analysis updates the memory. When off, an analysis can still read an existing memory but never writes it.\n"
+    "- Memory to use: this project's memory, the memory in another folder, or none. With none, nothing is read or written."
+)
 
 PACK_HELP = {
     "custom": "Leaves every control in your hands without forcing a workflow.",
@@ -103,7 +119,6 @@ OPTION_GUIDE = (
 )
 
 SCROLL_TARGET_ATTR = "_contexta_scroll_target"
-EMBEDDED_ICON_PNG_BASE64 = "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"
 
 
 def resolve_pack_focus(current_focus: str, previous_auto_focus: str, preset_focus: str) -> tuple[str, str]:
@@ -285,19 +300,52 @@ def _extract_icon_png(icon_path: Path) -> bytes | None:
     return best_entry[1] if best_entry else None
 
 
-def _load_icon_photo(target_px: int | None = None) -> tk.PhotoImage | None:
-    icon = _icon_path()
-    png_bytes = _extract_icon_png(icon) if icon else None
-    png_b64 = base64.b64encode(png_bytes).decode("ascii") if png_bytes else (EMBEDDED_ICON_PNG_BASE64_FALLBACK or EMBEDDED_ICON_PNG_BASE64)
+def _asset_roots() -> list[Path]:
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return [root, root / "assets"]
+
+
+def _photo_from_png(data: bytes | str) -> tk.PhotoImage | None:
+    if not data:
+        return None
+    payload = data if isinstance(data, str) else base64.b64encode(data).decode("ascii")
     try:
-        photo = tk.PhotoImage(data=png_b64, format="png")
+        return tk.PhotoImage(data=payload, format="png")
     except tk.TclError:
         return None
-    if target_px and photo.width() > target_px:
+
+
+def _load_icon_photo(target_px: int | None = None) -> tk.PhotoImage | None:
+    """The window icon: the largest image in icon.ico, or the embedded copy of the same logo."""
+    icon = _icon_path()
+    png_bytes = _extract_icon_png(icon) if icon else None
+    photo = _photo_from_png(png_bytes or EMBEDDED_ICON_PNG_BASE64)
+    if photo and target_px and photo.width() > target_px:
         factor = max(1, round(photo.width() / target_px))
         if factor > 1:
             photo = photo.subsample(factor, factor)
     return photo
+
+
+def _load_brand_logo(window: tk.Misc, logical_px: int = 40) -> tk.PhotoImage | None:
+    """The header logo, rendered from assets/logo.svg at 1x and 2x (Tk cannot draw SVG).
+
+    The 2x file is used on high-DPI screens so the logo stays crisp. Falls back to the embedded
+    copies, then to None (the caller draws BrandMark)."""
+    try:
+        hi_dpi = window.winfo_fpixels("1i") / 96.0 >= 1.5
+    except tk.TclError:
+        hi_dpi = False
+    names = ("logo@2x.png", "logo.png") if hi_dpi else ("logo.png",)
+    for name in names:
+        for folder in _asset_roots():
+            path = folder / name
+            if path.is_file():
+                try:
+                    return tk.PhotoImage(file=str(path))
+                except tk.TclError:
+                    continue
+    return _photo_from_png(EMBEDDED_LOGO_2X_PNG_BASE64 if hi_dpi else EMBEDDED_LOGO_PNG_BASE64)
 
 
 def _apply_window_icon(window: tk.Misc, icon_photo: tk.PhotoImage | None) -> None:
@@ -336,6 +384,8 @@ def _apply_window_icon(window: tk.Misc, icon_photo: tk.PhotoImage | None) -> Non
 
 
 class BrandMark(tk.Canvas):
+    """The logo from assets/logo.svg drawn with canvas shapes. Only used if no logo image can be loaded."""
+
     SIZE = 40
 
     def __init__(self, parent):
@@ -346,11 +396,22 @@ class BrandMark(tk.Canvas):
     def _draw(self):
         self.delete("all")
         self.configure(bg=C["card"])
-        self.create_oval(1, 1, self.SIZE - 1, self.SIZE - 1, fill=C["tag_bg"], outline=C["tag_bg"])
-        self.create_rectangle(13, 11, 28, 30, outline=C["accent"], width=2)
-        self.create_line(16, 17, 25, 17, fill=C["accent"], width=1.6, capstyle="round")
-        self.create_line(16, 21, 23, 21, fill=C["accent"], width=1.6, capstyle="round")
-        self.create_line(16, 25, 24, 25, fill=C["accent"], width=1.6, capstyle="round")
+        k = self.SIZE / 64.0
+
+        def pts(*coords):
+            return [value * k for value in coords]
+
+        r = 16
+        self.create_polygon(
+            pts(r, 0, 64 - r, 0, 64, 0, 64, r, 64, 64 - r, 64, 64, 64 - r, 64, r, 64, 0, 64, 0, 64 - r, 0, r, 0, 0),
+            smooth=True, fill="#12211c", outline="#12211c",
+        )
+        self.create_rectangle(*pts(16, 13, 42, 47), fill="#f4fbf7", outline="#f4fbf7")
+        self.create_polygon(*pts(34, 13, 42, 21, 34, 21), fill="#d5ebe3", outline="#d5ebe3")
+        for y, x2 in ((28, 36), (34, 32), (40, 34)):
+            self.create_line(*pts(22, y, x2, y), fill="#12211c", width=max(1.0, 1.7 * k), capstyle="round")
+        self.create_oval(*pts(34, 34, 56, 56), fill="#3dcc8e", outline="#3dcc8e")
+        self.create_line(*pts(40, 45.2, 43.1, 48.3, 49.7, 41.5), fill="#10211a", width=max(1.0, 2.1 * k), capstyle="round", joinstyle="round")
 
 
 class FlatBtn(tk.Frame):
@@ -667,6 +728,62 @@ class StatChip(tk.Frame):
         self._caption.configure(bg=C["bg2"], fg=C["text3"])
 
 
+def open_with_system(path: Path) -> None:
+    """Open a file with the app the system associates with it. Raises OSError when nothing can."""
+    if sys.platform.startswith("win"):
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    command = ["open", str(path)] if sys.platform == "darwin" else ["xdg-open", str(path)]
+    try:
+        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError as exc:
+        raise OSError("No app is set up to open this file.") from exc
+
+
+def friendly_time(iso: str | None) -> str:
+    """'2026-10-24T20:55:12Z' as local 'Oct 24, 17:55'. Falls back to the original text."""
+    if not iso:
+        return "never"
+    try:
+        stamp = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return stamp.astimezone().strftime("%b %d, %H:%M")
+    except ValueError:
+        return iso
+
+
+def describe_memory_status(info: dict) -> tuple[str, str, str]:
+    """(tone, headline, detail) for the Project memory card. Pure, so tests need no window."""
+    state = info.get("state")
+    if state == "ready":
+        detail = f"{info['files']:,} files   {info['symbols']:,} symbols   {info['edges']:,} edges\nUpdated {friendly_time(info.get('updated_at'))}"
+        return "ok", "Memory ready", detail
+    if state == "empty":
+        return "warn", "Memory is empty", info["message"]
+    if state == "absent":
+        return "warn", "No memory yet", info["message"]
+    if state == "disabled":
+        return "muted", "Memory off", info["message"]
+    if state == "needs_folder":
+        return "warn", "Choose a memory folder", info["message"]
+    if state == "error":
+        return "err", "Memory problem", info["message"]
+    return "muted", "No project", info.get("message", "")
+
+
+MEMORY_HINTS = {
+    "save": "Each analysis updates this memory so the next one starts from what Contexta already knows.",
+    "read_only": "Reads the memory to rank files. This analysis will not write to it.",
+    "off": "This analysis will not read or write any memory.",
+}
+
+
+def memory_hint(choice: "mem.MemoryChoice") -> str:
+    choice = choice.normalized()
+    if choice.mode == "none":
+        return MEMORY_HINTS["off"]
+    return MEMORY_HINTS["save"] if choice.save else MEMORY_HINTS["read_only"]
+
+
 class App(tk.Tk):
     def __init__(self):
         _set_windows_app_id()
@@ -687,10 +804,11 @@ class App(tk.Tk):
         self._status_pair = ("tag_bg", "tag_fg")
         self._banner_tone: str | None = None
         self._icon_photo = _load_icon_photo()
-        self._brand_logo = _load_icon_photo(40)
+        self._brand_logo = _load_brand_logo(self)
         _apply_window_icon(self, self._icon_photo)
 
         self._setup_ttk()
+        self._ui_calls: queue.Queue = queue.Queue()
         self._init_vars()
         self._build_ui()
         self._setup_scroll_routing()
@@ -699,6 +817,26 @@ class App(tk.Tk):
         self._sync_option_states()
         self._refresh_preview()
         self._center()
+        self.after(40, self._drain_ui_calls)
+
+    def _post(self, fn):
+        """Run ``fn`` on the UI thread. Safe to call from any thread: Tk itself is only touched from its own."""
+        if threading.current_thread() is threading.main_thread():
+            self.after(0, fn)
+        else:
+            self._ui_calls.put(fn)
+
+    def _drain_ui_calls(self):
+        while True:
+            try:
+                fn = self._ui_calls.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                fn()
+            except tk.TclError:  # the window closed while work was finishing
+                pass
+        self.after(40, self._drain_ui_calls)
 
     def _init_vars(self):
         self._combo_widgets: dict[str, tuple[tk.Variable, ttk.Combobox, dict[str, str]]] = {}
@@ -716,6 +854,18 @@ class App(tk.Tk):
         self._diff_var = tk.BooleanVar()
         self._staged_var = tk.BooleanVar()
         self._copy_var = tk.BooleanVar(value=True)
+        saved = mem.load_choice()
+        self._mem_save_var = tk.BooleanVar(value=saved.save)
+        self._mem_mode = saved.mode
+        self._mem_folder_var = tk.StringVar(value=saved.folder)
+        self._mem_busy = False
+        self._mem_tone = "muted"
+        self._mem_title_text = "No project"
+        self._mem_detail_text = ""
+        self._mem_buttons: list[FlatBtn] = []
+        self._run_plan = mem.MemoryPlan()
+        self._mem_save_var.trace_add("write", lambda *_: self._memory_choice_changed())
+        self._mem_folder_var.trace_add("write", lambda *_: self._memory_choice_changed())
 
     def _bind_runtime_fonts(self):
         import contexta_app.theme as theme_mod
@@ -895,7 +1045,7 @@ class App(tk.Tk):
         project_card = Card(left)
         project_card.grid(row=0, column=0, sticky="ew")
         project_inner = project_card.inner()
-        self._section(project_inner, "Project", "Folder Contexta will read. Nothing in it is modified.").pack(anchor="w")
+        self._section(project_inner, "Project", "Folder Contexta will read. Your files are never modified.").pack(anchor="w")
         row = tk.Frame(project_inner, bg=C["card"])
         row.pack(fill="x", pady=(14, 0))
         reg(row, lambda w: w.configure(bg=C["card"]))
@@ -919,8 +1069,10 @@ class App(tk.Tk):
         self._btn_pick = FlatBtn(row, "Browse", "accent", self._pick_folder, font=FBS, padx=14, pady=7, surface_key="card", variant="soft")
         self._btn_pick.pack(side="left", padx=(10, 0))
 
+        self._build_memory_card(left, row=1)
+
         strategy_card = Card(left)
-        strategy_card.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        strategy_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         strategy_inner = strategy_card.inner()
         self._section(strategy_inner, "Context strategy", "A pack is the preset. Mode and focus shape which files rise to the top.").pack(anchor="w")
         self._combo_field(strategy_inner, "Context pack", self._pack_var, PACK_OPTIONS).pack(fill="x", pady=(14, 0))
@@ -928,7 +1080,7 @@ class App(tk.Tk):
         self._entry_field(strategy_inner, "Focus", self._focus_var, "Optional. Try login, billing, or a file name.").pack(fill="x", pady=(12, 0))
 
         output_card = Card(left)
-        output_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        output_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         output_inner = output_card.inner()
         self._section(output_inner, "Output", "Who will read the pack, what they should do, and how much code to keep.").pack(anchor="w")
         self._combo_field(output_inner, "AI target", self._ai_var, AI_PROFILE_OPTIONS).pack(fill="x", pady=(14, 0))
@@ -961,7 +1113,7 @@ class App(tk.Tk):
         self._register_scroll_target(self._prompt)
 
         options_card = Card(left)
-        options_card.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        options_card.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         options_inner = options_card.inner()
         self._section(options_inner, "Scan options", "Widen the scan or lean on git. Details live in the guide.").pack(anchor="w")
         toggles = tk.Frame(options_inner, bg=C["card"])
@@ -983,11 +1135,11 @@ class App(tk.Tk):
 
         # Room for options added elsewhere (budgets, redaction, presets).
         self.extension_slot = tk.Frame(left, bg=C["bg"])
-        self.extension_slot.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        self.extension_slot.grid(row=5, column=0, sticky="ew", pady=(12, 0))
         reg(self.extension_slot, lambda w: w.configure(bg=C["bg"]))
 
         mcp_card = Card(left)
-        mcp_card.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        mcp_card.grid(row=6, column=0, sticky="ew", pady=(12, 0))
         mcp_inner = mcp_card.inner()
         self._section(mcp_inner, "MCP Server Setup", "Auto-configure Contexta as a tool server for your AI editor.").pack(anchor="w")
         mcp_btns = tk.Frame(mcp_inner, bg=C["card"])
@@ -1000,6 +1152,351 @@ class App(tk.Tk):
         mcp_hint.pack(anchor="w", pady=(10, 0))
         reg(mcp_hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
 
+    # ------------------------------------------------------------ project memory
+    def _build_memory_card(self, parent, row: int):
+        card = Card(parent)
+        card.grid(row=row, column=0, sticky="ew", pady=(12, 0))
+        inner = card.inner()
+        self._section(inner, "Project memory", "A local map of files, symbols and how they connect. It never stores file content, credentials or authors.").pack(anchor="w")
+
+        status = tk.Frame(inner, bg=C["card"])
+        status.pack(fill="x", pady=(12, 0))
+        self._mem_status_frame = status
+        self._mem_dot = tk.Label(status, text="●", font=FBS, bg=C["card"])
+        self._mem_dot.grid(row=0, column=0, sticky="nw")
+        self._mem_title = tk.Label(status, text="", font=FBS, bg=C["card"], anchor="w")
+        self._mem_title.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self._mem_detail = tk.Label(status, text="", font=FT, bg=C["card"], justify="left", anchor="w", wraplength=320)
+        self._mem_detail.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
+        status.grid_columnconfigure(1, weight=1)
+        status.bind("<Configure>", lambda e: self._mem_detail.configure(wraplength=max(e.width - 30, 160)), add="+")
+        reg(status, lambda w: self._paint_memory_status())
+
+        update_row = tk.Frame(inner, bg=C["card"])
+        update_row.pack(fill="x", pady=(12, 0))
+        reg(update_row, lambda w: w.configure(bg=C["card"]))
+        self._btn_mem_update = FlatBtn(update_row, "Update memory", "accent", self._memory_update, font=FBS, padx=14, pady=7, surface_key="card", variant="solid")
+        self._btn_mem_update.pack(fill="x")
+
+        tools = tk.Frame(inner, bg=C["card"])
+        tools.pack(fill="x", pady=(8, 0))
+        reg(tools, lambda w: w.configure(bg=C["card"]))
+        specs = (
+            ("_btn_mem_hot", "Hot files", self._memory_hot),
+            ("_btn_mem_symbols", "Symbols", self._memory_symbols),
+            ("_btn_mem_impact", "Impact", self._memory_impact),
+            ("_btn_mem_map", "Open map", self._memory_open_map),
+        )
+        for index, (attr, label, command) in enumerate(specs):
+            tools.grid_columnconfigure(index, weight=1, uniform="memtools")
+            button = FlatBtn(tools, label, "accent", command, font=FBS, padx=8, pady=6, surface_key="card", variant="ghost")
+            button.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 6, 0))
+            setattr(self, attr, button)
+        self._mem_buttons = [self._btn_mem_update, self._btn_mem_hot, self._btn_mem_symbols, self._btn_mem_impact, self._btn_mem_map]
+
+        rule = tk.Frame(inner, bg=C["border"], height=1)
+        rule.pack(fill="x", pady=(14, 12))
+        reg(rule, lambda w: w.configure(bg=C["border"]))
+
+        self._toggle_mem_save = Toggle(inner, "Save this analysis to Contexta memory", self._mem_save_var)
+        self._toggle_mem_save.pack(anchor="w")
+
+        pick_label = tk.Label(inner, text="Memory to use", font=FT, bg=C["card"], fg=C["text3"])
+        pick_label.pack(anchor="w", pady=(12, 6))
+        reg(pick_label, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+        self._mem_selector = Segmented(inner, [(key, label) for key, label in (("project", "This project"), ("folder", "Another folder"), ("none", "None"))], self._memory_mode_changed)
+        self._mem_selector.pack(anchor="w")
+        self._mem_selector.set(self._mem_mode)
+
+        self._mem_folder_row = tk.Frame(inner, bg=C["card"])
+        reg(self._mem_folder_row, lambda w: w.configure(bg=C["card"]))
+        folder_shell = self._input_shell(self._mem_folder_row)
+        folder_shell.pack(side="left", fill="x", expand=True)
+        folder_entry = tk.Entry(
+            folder_shell, textvariable=self._mem_folder_var, font=FM, bg=C["input"], fg=C["text"], insertbackground=C["accent"],
+            relief="flat", bd=0, selectbackground=C["accent"], selectforeground=readable_fg(C["accent"]),
+        )
+        folder_entry.pack(fill="x", padx=10, ipady=6)
+        reg(folder_entry, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"], selectbackground=C["accent"], selectforeground=readable_fg(C["accent"])))
+        self._bind_input_focus(folder_entry, folder_shell)
+        FlatBtn(self._mem_folder_row, "Browse", "accent", self._memory_pick_folder, font=FBS, padx=12, pady=5, surface_key="card", variant="soft").pack(side="left", padx=(8, 0))
+
+        self._mem_hint = tk.Label(inner, text="", font=FT, bg=C["card"], fg=C["text3"], justify="left", anchor="w", wraplength=320)
+        self._mem_hint.pack(anchor="w", fill="x", pady=(10, 0))
+        reg(self._mem_hint, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
+        inner.bind("<Configure>", lambda e: self._mem_hint.configure(wraplength=max(e.width - 8, 160)), add="+")
+        self._sync_memory_controls()
+        self._refresh_memory_status()
+
+    def _memory_choice(self) -> "mem.MemoryChoice":
+        return mem.MemoryChoice(self._mem_save_var.get(), self._mem_mode, self._mem_folder_var.get()).normalized()
+
+    def _memory_mode_changed(self, key: str):
+        self._mem_mode = key
+        self._memory_choice_changed()
+
+    def _memory_choice_changed(self):
+        if not hasattr(self, "_mem_hint"):
+            return
+        mem.save_choice(self._memory_choice())
+        self._sync_memory_controls()
+        self._refresh_memory_status()
+
+    def _sync_memory_controls(self):
+        choice = self._memory_choice()
+        self._toggle_mem_save.configure(state="disabled" if choice.mode == "none" else "normal")
+        if choice.mode == "folder":
+            self._mem_folder_row.pack(fill="x", pady=(8, 0), after=self._mem_selector)
+        else:
+            self._mem_folder_row.pack_forget()
+        self._mem_hint.configure(text=memory_hint(choice))
+
+    def _memory_pick_folder(self):
+        path = filedialog.askdirectory(title="Select the folder whose memory to use")
+        if path:
+            self._mem_folder_var.set(path)
+
+    def _refresh_memory_status(self):
+        info = mem.memory_status(self._project_path, self._memory_choice())
+        self._mem_tone, self._mem_title_text, self._mem_detail_text = describe_memory_status(info)
+        self._paint_memory_status()
+
+    def _paint_memory_status(self):
+        if not hasattr(self, "_mem_dot"):
+            return
+        color = {"ok": C["green"], "warn": C["amber"], "err": C["red"]}.get(self._mem_tone, C["text3"])
+        self._mem_status_frame.configure(bg=C["card"])
+        self._mem_dot.configure(bg=C["card"], fg=color)
+        self._mem_title.configure(bg=C["card"], fg=C["text"], text=self._mem_title_text)
+        self._mem_detail.configure(bg=C["card"], fg=C["text2"], text=self._mem_detail_text)
+
+    def _set_memory_buttons(self, enabled: bool):
+        for button in self._mem_buttons:
+            button.configure(state="normal" if enabled else "disabled")
+
+    def _memory_task(self, title: str, work, *, working: str, on_done=None):
+        """Run ``work`` off the UI thread and show what it returns in the Memory panel."""
+        if self._running:
+            self._show_banner("Wait for the context pack to finish, then use the memory.", "warn")
+            return
+        if self._mem_busy:
+            return
+        project, choice = self._project_path, self._memory_choice()
+        self._mem_busy = True
+        self._hide_banner()
+        self._set_memory_buttons(False)
+        self._btn_generate.configure(state="disabled")
+        self._progress.grid()
+        self._progress.start(12)
+        self._set_status("Memory", "accent", "ink")
+        self._show_memory(title, working, "muted")
+
+        done: queue.Queue = queue.Queue()
+
+        def job():
+            outcome: tuple = ("ok", "")
+            try:
+                outcome = ("ok", work(project, choice))
+            except mem.MemoryMissing as exc:
+                outcome = ("missing", str(exc))
+            except mem.MemoryProblem as exc:
+                outcome = ("err", str(exc))
+            except Exception as exc:  # shown plainly, never a traceback in the window
+                outcome = ("err", f"Memory could not finish: {exc or exc.__class__.__name__}")
+            done.put(outcome)  # the UI thread picks it up; Tk is only touched from there
+
+        def poll():
+            try:
+                outcome = done.get_nowait()
+            except queue.Empty:
+                self.after(60, poll)
+                return
+            self._memory_finished(title, outcome, on_done)
+
+        threading.Thread(target=job, daemon=True).start()
+        self.after(60, poll)
+
+    def _memory_finished(self, title: str, outcome: tuple, on_done):
+        self._mem_busy = False
+        self._set_memory_buttons(True)
+        if self._project_path and not self._running:
+            self._btn_generate.configure(state="normal")
+        self._hide_progress()
+        kind, text = outcome
+        if kind == "ok":
+            self._set_status(self._project_path.name if self._project_path else "Ready", "tag_bg", "tag_fg")
+            self._show_memory(title, text, "ok")
+            self._log_write(f"Memory: {title.lower()} done.", "ok")
+            if on_done:
+                on_done(text)
+        elif kind == "missing":
+            self._set_status("No memory", "warn_soft", "amber")
+            self._show_memory(title, text, "warn", offer_update=True)
+        else:
+            self._set_status("Memory", "danger_soft", "red")
+            self._show_memory(title, text, "err")
+            self._log_write(f"Memory: {text}", "err")
+        self._refresh_memory_status()
+
+    def _memory_needs_project(self) -> bool:
+        if self._project_path:
+            return False
+        self._show_memory("Project memory", "Choose a project folder first. Memory is kept per project.", "warn")
+        return True
+
+    def _memory_update(self):
+        if self._memory_needs_project():
+            return
+        self._memory_task("Update memory", lambda p, c: mem.update_memory(p, c), working="Reading the project and updating its memory…")
+
+    def _memory_hot(self):
+        if self._memory_needs_project():
+            return
+        self._memory_task("Hot files", lambda p, c: mem.hot_files(p, c), working="Reading the history…")
+
+    def _memory_symbols(self):
+        if self._memory_needs_project():
+            return
+        query = self._ask_text("Symbols", "Search symbols by name", "login, Invoice, parse_args")
+        if query is None:
+            return
+        self._memory_task(f"Symbols: {query.strip()}", lambda p, c: mem.find_symbols(p, c, query), working="Searching…")
+
+    def _memory_impact(self):
+        if self._memory_needs_project():
+            return
+        target = self._ask_text("Impact", "File to check, relative to the project", "src/app.py")
+        if target is None:
+            return
+        self._memory_task(f"Impact: {target.strip()}", lambda p, c: mem.impact_of(p, c, target), working="Following the connections…")
+
+    def _memory_open_map(self):
+        if self._memory_needs_project():
+            return
+
+        def work(project, choice):
+            out_file = get_desktop() / f"contexta map - {safe_project_name(project.name)}.md"
+            mem.export_map(project, choice, out_file)
+            lines = out_file.read_text(encoding="utf-8").splitlines()
+            shown = "\n".join(lines[:160])
+            more = f"\n… {len(lines) - 160} more lines in the file." if len(lines) > 160 else ""
+            return f"Saved: {out_file}\n\n{shown}{more}\n"
+
+        def opened(text: str):
+            first = text.splitlines()[0].removeprefix("Saved: ")
+            try:
+                open_with_system(Path(first))
+            except OSError as exc:
+                self._log_write(f"Map saved, but it could not be opened: {exc}", "warn")
+
+        self._memory_task("Memory map", work, working="Building the map…", on_done=opened)
+
+    def _ask_text(self, title: str, label: str, hint: str) -> str | None:
+        """A small modal prompt in the app's style. Returns the text, or None when cancelled."""
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.configure(bg=C["card"])
+        win.transient(self)
+        win.resizable(False, False)
+        _apply_window_icon(win, self._icon_photo)
+        result: dict[str, str | None] = {"value": None}
+        body = tk.Frame(win, bg=C["card"])
+        body.pack(fill="both", expand=True, padx=20, pady=18)
+        caption = tk.Label(body, text=label, font=FBS, bg=C["card"], fg=C["text"], anchor="w")
+        caption.pack(anchor="w")
+        example = tk.Label(body, text=f"For example: {hint}", font=FT, bg=C["card"], fg=C["text3"], anchor="w")
+        example.pack(anchor="w", pady=(2, 10))
+        var = tk.StringVar()
+        shell = self._input_shell(body)
+        shell.pack(fill="x")
+        entry = tk.Entry(shell, textvariable=var, font=FM, width=44, bg=C["input"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0)
+        entry.pack(fill="x", padx=10, ipady=7)
+        self._bind_input_focus(entry, shell)
+
+        def accept(_event=None):
+            result["value"] = var.get()
+            win.destroy()
+
+        buttons = tk.Frame(body, bg=C["card"])
+        buttons.pack(fill="x", pady=(14, 0))
+        FlatBtn(buttons, "Cancel", "accent", win.destroy, font=FBS, padx=14, pady=6, surface_key="card", variant="ghost").pack(side="right")
+        FlatBtn(buttons, "Search" if title == "Symbols" else "Check", "accent", accept, font=FBS, padx=14, pady=6, surface_key="card", variant="solid").pack(side="right", padx=(0, 8))
+        entry.bind("<Return>", accept)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + 120
+        win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        win.grab_set()
+        entry.focus_set()
+        self.wait_window(win)
+        return result["value"]
+
+    # -- the Memory panel on the right
+    def _build_memory_panel(self, stack):
+        self._memory_shell = tk.Frame(stack, bg=C["bg2"], highlightthickness=1, highlightbackground=C["border"])
+        self._memory_shell.grid(row=0, column=0, sticky="nsew")
+        self._memory_shell.grid_columnconfigure(0, weight=1)
+        self._memory_shell.grid_rowconfigure(1, weight=1)
+        reg(self._memory_shell, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
+        head = tk.Frame(self._memory_shell, bg=C["bg2"])
+        head.grid(row=0, column=0, columnspan=2, sticky="ew")
+        reg(head, lambda w: w.configure(bg=C["bg2"]))
+        head.grid_columnconfigure(0, weight=1)
+        self._memory_meta = tk.Label(head, text="", font=FT, bg=C["bg2"], fg=C["text3"], anchor="w", justify="left", wraplength=420, padx=14, pady=8)
+        self._memory_meta.grid(row=0, column=0, sticky="ew")
+        reg(self._memory_meta, lambda w: w.configure(bg=C["bg2"], fg=C["text3"]))
+        self._memory_offer = FlatBtn(head, "Update memory now", "accent", self._memory_update, font=FBS, padx=12, pady=5, surface_key="bg2", variant="solid")
+        self._memory_offer.grid(row=0, column=1, padx=(0, 12))
+        self._memory_offer.grid_remove()
+        self._memory_text = tk.Text(
+            self._memory_shell, font=FM, bg=C["bg2"], fg=C["text"], relief="flat", bd=0, padx=14, pady=8,
+            wrap="word", state="disabled", cursor="arrow",
+        )
+        self._memory_text.grid(row=1, column=0, sticky="nsew")
+        reg(self._memory_text, lambda w: w.configure(bg=C["bg2"], fg=C["text"]))
+        scroll = ttk.Scrollbar(self._memory_shell, orient="vertical", command=self._memory_text.yview)
+        scroll.grid(row=1, column=1, sticky="ns")
+        self._memory_text.configure(yscrollcommand=scroll.set)
+        self._register_scroll_target(self._memory_shell, self._memory_text)
+        self._register_scroll_target(self._memory_text)
+        self._configure_memory_tags()
+        self._memory_shell.grid_remove()
+
+    def _configure_memory_tags(self):
+        sans = FS[0]
+        self._memory_text.tag_configure("title", font=(sans, 14, "bold"), foreground=C["text"], spacing3=8)
+        self._memory_text.tag_configure("body", font=FM, foreground=C["text2"], spacing3=1)
+        self._memory_text.tag_configure("ok", font=FM, foreground=C["text"], spacing3=1)
+        self._memory_text.tag_configure("muted", font=FS, foreground=C["text3"])
+        self._memory_text.tag_configure("warn", font=FS, foreground=C["amber"])
+        self._memory_text.tag_configure("err", font=FS, foreground=C["red"])
+
+    def _show_memory(self, title: str, text: str, tone: str = "ok", offer_update: bool = False):
+        """Put an answer from the project memory in the right-hand panel."""
+        self._memory_meta.configure(text=self._memory_scope_line())
+        self._memory_text.configure(state="normal")
+        self._memory_text.delete("1.0", "end")
+        self._memory_text.insert("end", title + "\n", "title")
+        body_tag = {"ok": "ok", "muted": "muted", "warn": "warn", "err": "err"}.get(tone, "body")
+        for line in text.splitlines() or [""]:
+            self._memory_text.insert("end", line + "\n", body_tag if tone != "ok" else "body")
+        self._memory_text.configure(state="disabled")
+        self._memory_text.see("1.0")
+        if offer_update:
+            self._memory_offer.grid()
+        else:
+            self._memory_offer.grid_remove()
+        self._view_switch.set("memory")
+        self._show_reader()
+
+    def _memory_scope_line(self) -> str:
+        choice = self._memory_choice()
+        name = self._project_path.name if self._project_path else "no project"
+        if choice.mode == "folder" and choice.folder:
+            return f"{name}      memory from another folder"
+        return f"{name}      {mem.MODE_LABELS[choice.mode].lower()}"
+
     def _build_preview(self, parent):
         self._reader = Card(parent, pad=14)
         self._reader.grid(row=0, column=0, sticky="nsew")
@@ -1010,8 +1507,10 @@ class App(tk.Tk):
         header = tk.Frame(inner, bg=C["card"])
         header.grid(row=0, column=0, sticky="ew")
         reg(header, lambda w: w.configure(bg=C["card"]))
-        self._section(header, "Pack", "What this export will emphasize, then the Markdown itself.").pack(side="left", anchor="w")
-        self._view_switch = Segmented(header, [("preview", "Preview"), ("result", "Result")], self._set_view)
+        reader_title = self._section(header, "Pack", "What this export will emphasize, then the Markdown itself.")
+        reader_title.pack(side="left", anchor="w")
+        self._reader_title, self._reader_subtitle = reader_title.winfo_children()
+        self._view_switch = Segmented(header, [("preview", "Preview"), ("result", "Result"), ("memory", "Memory")], self._set_view)
         self._view_switch.pack(side="right", anchor="e")
 
         self._metrics = tk.Frame(inner, bg=C["card"])
@@ -1125,6 +1624,7 @@ class App(tk.Tk):
         self._register_scroll_target(self._result_shell, self._result)
         self._register_scroll_target(self._result)
         self._configure_result_tags()
+        self._build_memory_panel(self._preview_stack)
         self._result_shell.grid_remove()
         self._preview_shell.grid_remove()
 
@@ -1454,14 +1954,27 @@ class App(tk.Tk):
         self._empty_state.grid()
         self._preview_shell.grid_remove()
         self._result_shell.grid_remove()
+        self._memory_shell.grid_remove()
 
     def _show_reader(self):
         self._empty_state.grid_remove()
-        if self._view_switch._current == "result":
-            self._preview_shell.grid_remove()
-            self._result_shell.grid()
+        current = self._view_switch._current
+        if current == "memory":
+            self._reader_title.configure(text="Project memory")
+            self._reader_subtitle.configure(text="What Contexta remembers about this project. Names and relations only.")
+            self._metrics.grid_remove()
         else:
-            self._result_shell.grid_remove()
+            self._reader_title.configure(text="Pack")
+            self._reader_subtitle.configure(text="What this export will emphasize, then the Markdown itself.")
+            self._metrics.grid()
+        self._preview_shell.grid_remove()
+        self._result_shell.grid_remove()
+        self._memory_shell.grid_remove()
+        if current == "result":
+            self._result_shell.grid()
+        elif current == "memory":
+            self._memory_shell.grid()
+        else:
             self._preview_shell.grid()
 
     def _set_view(self, key: str):
@@ -1470,6 +1983,9 @@ class App(tk.Tk):
             return
         if key == "result" and not self._last_md:
             self._render_result_placeholder()
+        if key == "memory" and not self._memory_text.get("1.0", "end").strip():
+            self._show_memory("Project memory", "Use Update memory, Hot files, Symbols, Impact or Open map on the left. Results show up here.", "muted")
+            return
         self._show_reader()
 
     def _render_result_placeholder(self):
@@ -1567,6 +2083,7 @@ class App(tk.Tk):
         self._configure_preview_tags()
         self._configure_result_tags()
         self._configure_log_tags()
+        self._configure_memory_tags()
         self._paint_status()
         if self._banner_tone:
             self._paint_banner()
@@ -1588,15 +2105,32 @@ class App(tk.Tk):
         self._set_status(self._project_path.name, "tag_bg", "tag_fg")
         self._view_switch.set("preview")
         self._refresh_preview()
+        self._refresh_memory_status()
 
     def _start(self):
-        if self._running or not self._project_path:
+        if self._running or self._mem_busy or not self._project_path:
             return
+        self._run_plan = mem.plan_for(self._project_path, self._memory_choice())
+        # Read every control here, on the UI thread. The worker never touches a widget.
+        self._run_args = dict(
+            include_hidden=self._hidden_var.get(),
+            include_unknown=self._unknown_var.get(),
+            diff_mode=self._diff_var.get(),
+            staged_only=self._staged_var.get(),
+            system_prompt=self._prompt.get("1.0", "end").strip(),
+            context_mode=self._mode_var.get(),
+            ai_profile=self._ai_var.get(),
+            task_profile=self._task_var.get(),
+            compression=self._compression_var.get(),
+            pack_profile=self._pack_var.get(),
+            focus_query=self._focus_var.get().strip(),
+        )
         self._running = True
         self._hide_banner()
         self._btn_generate.configure(state="disabled", text="Creating…")
         self._btn_pick.configure(state="disabled")
         self._btn_copy.configure(state="disabled")
+        self._set_memory_buttons(False)
         self._progress.grid()
         self._progress.start(12)
         self._log_clear()
@@ -1606,36 +2140,37 @@ class App(tk.Tk):
 
     def _worker(self):
         try:
-            custom_goal = self._prompt.get("1.0", "end").strip()
+            plan = self._run_plan
+            if plan.problem:
+                self._log_write(f"{plan.problem} Continuing without memory.", "warn")
+            elif plan.use:
+                self._log_write(f"Memory: {plan.label.lower()}, {'read only' if plan.read_only else 'saving this analysis'}.", "info")
+            else:
+                self._log_write("Memory is off for this analysis.", "muted")
             markdown = generate_markdown(
                 self._project_path,
-                include_hidden=self._hidden_var.get(),
-                include_unknown=self._unknown_var.get(),
-                diff_mode=self._diff_var.get(),
-                staged_only=self._staged_var.get(),
-                system_prompt=custom_goal,
-                context_mode=self._mode_var.get(),
-                ai_profile=self._ai_var.get(),
-                task_profile=self._task_var.get(),
-                compression=self._compression_var.get(),
-                pack_profile=self._pack_var.get(),
-                focus_query=self._focus_var.get().strip(),
+                **self._run_args,
+                use_graph=plan.use,
+                graph_db=plan.db_path,
+                graph_readonly=plan.read_only,
                 log_cb=self._log_write,
             )
             desktop = get_desktop()
             safe_name = safe_project_name(self._project_path.name)
             out_file = desktop / f"contexta - {safe_name}.md"
             out_file.write_text(markdown, encoding="utf-8")
-            self.after(0, lambda: self._finish_success(markdown, out_file, self._copy_var.get()))
+            self._post(lambda: self._finish_success(markdown, out_file, self._copy_var.get()))
         except Exception as exc:
             message = str(exc)
             self._log_write(f"Error: {message}", "err")
-            self.after(0, lambda m=message: self._show_error(m))
+            self._post(lambda m=message: self._show_error(m))
         finally:
             self._running = False
-            self.after(0, self._hide_progress)
-            self.after(0, lambda: self._btn_generate.configure(state="normal", text="Create context pack"))
-            self.after(0, lambda: self._btn_pick.configure(state="normal"))
+            self._post(self._hide_progress)
+            self._post(lambda: self._btn_generate.configure(state="normal", text="Create context pack"))
+            self._post(lambda: self._btn_pick.configure(state="normal"))
+            self._post(lambda: self._set_memory_buttons(True))
+            self._post(self._refresh_memory_status)
 
     def _hide_progress(self):
         self._progress.stop()
@@ -1683,7 +2218,7 @@ class App(tk.Tk):
             self._log.see("end")
             self._log.configure(state="disabled")
 
-        self.after(0, _write)
+        self._post(_write)
 
     def _center(self):
         self.update_idletasks()
@@ -1718,10 +2253,17 @@ class App(tk.Tk):
         shell.pack(fill="both", expand=True, padx=18, pady=18)
         reg(shell, lambda w: w.configure(bg=C["bg"]))
 
-        title = tk.Label(shell, text="How to use Contexta", font=FH, bg=C["bg"], fg=C["text"])
-        title.pack(anchor="w")
+        head = tk.Frame(shell, bg=C["bg"])
+        head.pack(anchor="w", fill="x")
+        reg(head, lambda w: w.configure(bg=C["bg"]))
+        if self._brand_logo:
+            mark = tk.Label(head, image=self._brand_logo, bg=C["bg"])
+            mark.pack(side="left", padx=(0, 12))
+            reg(mark, lambda w: w.configure(bg=C["bg"]))
+        title = tk.Label(head, text="How to use Contexta", font=FH, bg=C["bg"], fg=C["text"])
+        title.pack(side="left")
         reg(title, lambda w: w.configure(bg=C["bg"], fg=C["text"]))
-        subtitle = tk.Label(shell, text="A quick explanation of the controls so you can build the right context pack faster.", font=FS, bg=C["bg"], fg=C["text2"])
+        subtitle = tk.Label(shell, text=f"Contexta v{__version__}. A quick explanation of the controls so you can build the right context pack faster.", font=FS, bg=C["bg"], fg=C["text2"])
         subtitle.pack(anchor="w", pady=(4, 14))
         reg(subtitle, lambda w: w.configure(bg=C["bg"], fg=C["text2"]))
 
@@ -1753,6 +2295,7 @@ class App(tk.Tk):
             ("Compression", "\n".join(f"- {label}: {COMPRESSION_HELP.get(key, '')}" for key, label in COMPRESSION_OPTIONS.items())),
             ("Focus", "Use a bug name, feature, route, service, file name, or keyword when you want Contexta to bias scoring, ordering, excerpts, and related files around a specific area."),
             ("Options", OPTION_GUIDE),
+            ("Project memory", MEMORY_GUIDE),
         ]
 
         for heading, body in sections:

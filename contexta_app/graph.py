@@ -83,6 +83,10 @@ CREATE INDEX IF NOT EXISTS history_ts ON history(ts);
 """
 
 
+class MemoryOwnerError(ValueError):
+    """A shared memory file already belongs to a different project."""
+
+
 @dataclass
 class UpdateStats:
     total: int = 0
@@ -333,18 +337,43 @@ class Resolver:
 
 
 class ProjectGraph:
-    def __init__(self, root: Path, db_path: Path | None = None):
+    def __init__(self, root: Path, db_path: Path | None = None, readonly: bool = False):
+        """``readonly`` opens an existing memory without creating, migrating or writing anything."""
         self.root = Path(root).resolve()
+        env = os.environ.get("CONTEXTA_GRAPH_DIR", "").strip()
+        explicit_db = db_path is not None
         if db_path is None:
-            env = os.environ.get("CONTEXTA_GRAPH_DIR", "").strip()
             base = Path(env).expanduser() if env else self.root / GRAPH_DIRNAME
             db_path = base / GRAPH_FILENAME
         self.db_path = Path(db_path)
+        # A memory kept outside <project>/.contexta is stamped with its project, so two projects never overwrite each other.
+        self._shared = explicit_db and self.db_path.parent != self.root / GRAPH_DIRNAME
+        self.readonly = readonly
         self._con: sqlite3.Connection | None = None
 
     # connection
     @property
     def con(self) -> sqlite3.Connection:
+        if self._con is None and self.readonly:
+            if not self.db_path.is_file():
+                raise FileNotFoundError("No project memory here yet.")
+            con = sqlite3.connect(f"file:{self.db_path.as_posix()}?mode=ro", uri=True, timeout=10)
+            con.row_factory = sqlite3.Row
+            try:
+                row = con.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
+                version = int(row[0]) if row else None
+            except sqlite3.OperationalError as exc:
+                if "no such table" not in str(exc):
+                    con.close()
+                    raise
+                version = None
+            except sqlite3.DatabaseError:
+                con.close()
+                raise
+            if version != SCHEMA_VERSION:
+                con.close()
+                raise ValueError("This project memory was written by another Contexta version. Update it to rebuild it.")
+            self._con = con
         if self._con is None:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             guard = self.db_path.parent / ".gitignore"
@@ -393,8 +422,11 @@ class ProjectGraph:
     # ---------------------------------------------------------------- update
     def update(self, files: list[Path] | None = None, *, use_git: bool = True, force: bool = False) -> UpdateStats:
         """Bring the graph in line with the files on disk. Parses only what changed."""
+        if self.readonly:
+            raise RuntimeError("This project memory is open read-only.")
         started = time.perf_counter()
         stats = UpdateStats()
+        self._claim()
         if files is None:
             files = self._scan()
         current: dict[str, Path] = {}
@@ -462,6 +494,38 @@ class ProjectGraph:
             stats.edges = con.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         stats.seconds = time.perf_counter() - started
         return stats
+
+    def _peek_owner(self) -> tuple[str | None, int]:
+        """(owner stamp, file count) of an existing memory, read without changing it."""
+        if not self.db_path.is_file():
+            return None, 0
+        try:
+            con = sqlite3.connect(f"file:{self.db_path.as_posix()}?mode=ro", uri=True, timeout=10)
+        except sqlite3.DatabaseError:
+            return None, 0
+        try:
+            row = con.execute("SELECT value FROM meta WHERE key='owner'").fetchone()
+            files = con.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+            return (row[0] if row else None), files
+        except sqlite3.DatabaseError:
+            return None, 0
+        finally:
+            con.close()
+
+    def _claim(self) -> None:
+        """Stamp a memory kept outside the project folder with this project, or refuse one that belongs to another.
+        A refused memory is not opened for writing, so it stays byte for byte as it was."""
+        if not self._shared:
+            return
+        me = hashlib.sha1(str(self.root).encode("utf-8", "replace")).hexdigest()[:16]
+        owner, files = self._peek_owner()
+        if owner and owner != me:
+            raise MemoryOwnerError("That memory belongs to a different project. Pick an empty folder, or this project's own memory.")
+        if not owner and files:
+            raise MemoryOwnerError("That memory already holds another project's files. Pick an empty folder, or this project's own memory.")
+        if not owner:
+            self._set_meta("owner", me)
+            self.con.commit()
 
     def _scan(self) -> list[Path]:
         from contexta_app.engine.insight import flatten_tree

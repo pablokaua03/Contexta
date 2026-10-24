@@ -20,6 +20,11 @@ Contexta now remembers your project. A local graph of files, symbols, tests and 
 - **`--for bugfix|review|onboard|refactor`** picks the pack. `review` compares against `origin/main`, `main`, `origin/master` or `master`, whichever exists. `--help` is regrouped, with a short usage line and examples
 - **GitHub Action** (`action.yml`): PR context with the diff, impacted tests and a redacted pack inside a token budget, as an artifact and an optional comment that updates in place. See [docs/github-action.md](docs/github-action.md)
 - **Benchmark** against Repomix and Gitingest on Flask, Requests and FastAPI: tokens, time and recall, with the places Contexta loses. `python benchmarks/bench.py`
+- **Project memory card** in the desktop app: status for the selected project (files, symbols, edges, last update) and **Update memory** (background thread), **Hot files**, **Symbols**, **Impact** and **Open map**. Answers show in a new **Memory** tab. Handles no project, an empty project, a missing `graph.db` (offers to build it) and unreadable files, in plain words
+- **Per-analysis memory control.** A **Save this analysis to Contexta memory** toggle (on by default; off means the run may read an existing memory but never writes it) and a memory selector: this project's memory, another folder's memory (Browse), or none. Remembered between launches in `~/.contexta/gui.json`
+- CLI: `--no-memory` (same as `--no-graph`), `--memory PATH` and `--memory-read-only`; config keys `memory_path` and `memory_save`
+- A memory kept outside `.contexta/` is stamped with its project. A run never overwrites a memory that belongs to another project: it reads it, read-only, and says so
+- `assets/memory.png`; `packaging/gui_screenshots.py` regenerates it
 
 ### Changed
 - `tree-sitter` is now optional: `pip install "contexta-ai[syntax]"`. Without it, non-Python languages use a regex scanner. The `gui` extra installs the same parsers (Tk ships with Python and cannot come from pip). `contexta` without Tk now explains how to install it instead of failing with a traceback
@@ -27,6 +32,8 @@ Contexta now remembers your project. A local graph of files, symbols, tests and 
 - When the file cap is hit, application code is scanned first, then tests, then `docs` and `examples`. On FastAPI the 2,000-file cap used to cut off the `fastapi/` package and pack `docs_src` instead
 - When a file has more definitions than fit in a pack, the signature list keeps focus matches, then classes, then top-level functions, instead of the first 18 in file order. Focus stemming also matches `dependency` with `dependencies`
 - Contexta writes `.contexta/` in the project (it ignores itself) unless `--no-graph` or `graph = false` is set. It still never modifies your files
+- The desktop app now builds the project graph during an analysis by default (it used to skip it), so "save to memory" does what it says. Turn it off with the toggle or choose **None**. The Project card now says "Your files are never modified"
+- Worker threads in the app no longer touch Tk widgets or call `after` from outside the UI thread
 
 ### Fixed
 - "Scanning directory: assets/assets" repeated the folder name in the scan log

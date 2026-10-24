@@ -45,6 +45,8 @@ _KNOWN_KEYS = frozenset(
         "redact_allow",
         "redact_entropy",
         "graph",
+        "memory_save",
+        "memory_path",
     }
 )
 
@@ -76,6 +78,8 @@ class ContextaConfig:
     redact_allow: list[str] = field(default_factory=list)
     redact_entropy: bool | None = None
     graph: bool | None = None
+    memory_save: bool | None = None
+    memory_path: str | None = None
     warnings: list[str] = field(default_factory=list)
     source: str = ""
 
@@ -102,6 +106,8 @@ class ContextaConfig:
             "max_files",
             "redact_entropy",
             "graph",
+            "memory_save",
+            "memory_path",
         ):
             value = getattr(other, key)
             if value is not None:
@@ -208,6 +214,8 @@ def _parse_table(data: dict, source: str) -> ContextaConfig:
     config.redact_allow = _optional_str_list(data, "redact_allow", source)
     config.redact_entropy = _optional_bool(data, "redact_entropy", source)
     config.graph = _optional_bool(data, "graph", source)
+    config.memory_save = _optional_bool(data, "memory_save", source)
+    config.memory_path = _optional_str(data, "memory_path", source)
     _validate_choices(config, source)
     return config
 
@@ -318,6 +326,11 @@ ignore = []
 # Keep a local project graph in .contexta/graph.db (git-ignored by itself). It
 # ranks files for --budget and --focus and powers `contexta graph`.
 # graph = true
+
+# false: read an existing memory for ranking, but never write it.
+# memory_save = true
+# Keep the memory in another folder (or graph.db file) instead of .contexta/.
+# memory_path = "~/contexta-memory/my-project"
 """
 
 STARTER_IGNORE_FILE = """\

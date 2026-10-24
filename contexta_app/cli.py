@@ -27,6 +27,7 @@ from contexta_app.context_engine import (
     PACK_OPTIONS,
     TASK_PROFILE_OPTIONS,
 )
+from contexta_app.memory import MemoryChoice, plan_for
 from contexta_app.renderer import __version__, export_pack
 from contexta_app.scanner import GitError, GitRefError, git_ref_exists, git_state
 from contexta_app.utils import get_desktop, safe_project_name
@@ -57,6 +58,8 @@ class RunPlan:
     redact_allow: tuple[str, ...]
     redact_entropy: bool
     use_graph: bool
+    graph_db: Path | None
+    graph_readonly: bool
     dry_run: bool
     base_ref: str | None
     output_format: str
@@ -138,6 +141,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = parser.add_argument_group("scan and graph")
     scan.add_argument("--no-graph", action="store_true", help="Do not read or write .contexta/graph.db. Graph ranking and the large-repo prefilter are off")
+    scan.add_argument("--no-memory", dest="no_graph", action="store_true", help="Same as --no-graph: this run does not read or write any project memory")
+    scan.add_argument("--memory", default=None, metavar="PATH", help="Use the memory in this folder (or graph.db file) instead of .contexta/. A memory that belongs to another project is only read")
+    scan.add_argument("--memory-read-only", action="store_true", help="Read an existing memory for ranking but never write it. Creates nothing")
     scan.add_argument("--max-files", type=int, default=None, help="Stop scanning after this many files. Default: 2000, or CONTEXTA_MAX_FILES")
 
     git = parser.add_argument_group("git")
@@ -309,6 +315,17 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         to_stdout = True
 
     max_tokens = args.max_tokens if args.max_tokens is not None else cfg.max_tokens
+    use_graph = not args.no_graph and cfg.graph is not False
+    memory_save = not (args.memory_read_only or cfg.memory_save is False)
+    memory_dir = Path(args.memory).expanduser().resolve() if args.memory else None
+    if memory_dir is None and cfg.memory_path:
+        memory_dir = (project / Path(cfg.memory_path).expanduser()).resolve()
+    graph_db = None
+    if use_graph and memory_dir is not None:
+        mem_plan = plan_for(project, MemoryChoice(memory_save, "folder", str(memory_dir)))
+        if mem_plan.problem:
+            raise ConfigError(mem_plan.problem)
+        graph_db = mem_plan.db_path
     return RunPlan(
         project=project,
         include_hidden=bool(args.hidden or cfg.hidden),
@@ -326,7 +343,9 @@ def build_plan(args, project: Path, *, stdout_isatty: bool) -> RunPlan:
         redact_secrets=redact,
         redact_allow=tuple(cfg.redact_allow),
         redact_entropy=True if cfg.redact_entropy is None else cfg.redact_entropy,
-        use_graph=not args.no_graph and cfg.graph is not False,
+        use_graph=use_graph,
+        graph_db=graph_db,
+        graph_readonly=use_graph and not memory_save,
         dry_run=bool(args.dry_run),
         base_ref=base,
         output_format=output_format,
@@ -434,6 +453,8 @@ def _render_with_budget(plan: RunPlan, status) -> tuple[str, dict]:
             redact_allow=plan.redact_allow,
             redact_entropy=plan.redact_entropy,
             use_graph=plan.use_graph,
+            graph_db=plan.graph_db,
+            graph_readonly=plan.graph_readonly,
             base_ref=plan.base_ref,
             max_files=plan.max_files,
             token_budget=plan.max_tokens,

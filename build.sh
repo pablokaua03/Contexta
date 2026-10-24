@@ -22,9 +22,12 @@ if [ -z "$PYTHON_BIN" ]; then
     fi
 fi
 
+# One version number: contexta_app/__init__.py. This also refreshes packaging/version_info.txt.
+APP_VERSION="$("$PYTHON_BIN" packaging/sync_version.py)"
+
 echo ""
 echo " ========================================="
-echo "  Contexta 2.0 - Build Unix Executable"
+echo "  Contexta $APP_VERSION - Build Unix Executable"
 echo " ========================================="
 echo ""
 
