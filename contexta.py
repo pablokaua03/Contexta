@@ -5,6 +5,8 @@ Usage:
     contexta serve [--root DIR]  Start the MCP server (for Claude Code, Cursor, etc.).
                                  Tools only read inside --root (repeatable), CONTEXTA_ROOT,
                                  or the current directory
+    contexta graph <command>    Ask the project graph: dependents, impact, hot files, repo map
+    contexta install <target>   Write agent rules or MCP config (cursor, claude, copilot, mcp)
     contexta <project> [opts]   Generate a context pack (CLI mode)
     contexta                    Launch the desktop GUI
     contexta --configure-ai     Set up AI API keys
@@ -24,6 +26,14 @@ def main() -> None:
         if roots:
             configure_roots(roots)
         mcp.run()
+    elif len(sys.argv) > 1 and sys.argv[1] == "graph":
+        from contexta_app.graph_cli import run_graph
+
+        raise SystemExit(run_graph(sys.argv[2:]))
+    elif len(sys.argv) > 1 and sys.argv[1] == "install":
+        from contexta_app.install import run_install
+
+        raise SystemExit(run_install(sys.argv[2:]))
     elif len(sys.argv) > 1:
         from contexta_app.cli import run_cli
 
