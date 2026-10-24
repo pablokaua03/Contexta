@@ -11,7 +11,7 @@ Contexta reads a codebase, keeps the files that matter for the task, fits them i
 [![Python](https://img.shields.io/badge/python-3.11%2B-12211c?style=flat-square)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-12211c?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-12211c?style=flat-square)]()
-[![Version](https://img.shields.io/badge/version-2.1.0-12211c?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-2.2.0-12211c?style=flat-square)]()
 [![MCP](https://img.shields.io/badge/MCP-compatible-12211c?style=flat-square)]()
 
 <br>
@@ -44,19 +44,23 @@ Dumping a whole repo into a chat wastes tokens and leaks things. Contexta does t
 | **Respect your budget** | `--budget 20000` keeps the best files that fit and lists what it left out |
 | **Stay safe** | Redaction is on by default, credential files are never read, and the MCP server only reads inside the folder you allow |
 
-Real numbers on [Flask](https://github.com/pallets/flask), measured on the same machine:
+Measured on pinned commits of [Flask](https://github.com/pallets/flask), [Requests](https://github.com/psf/requests) and [FastAPI](https://github.com/fastapi/fastapi), against Repomix and Gitingest ([`benchmarks/`](benchmarks/README.md), reproducible with one command):
 
 | Command | Result |
 |---|---|
-| `contexta flask` | 0.7 s (was 2.9 s). FastAPI, 2000 files: 5 s (was 69 s) |
-| `contexta flask --focus "session cookie signing"` | 8 files, about 17k tokens, `sessions.py` first (was the whole repo, about 165k) |
-| `contexta flask --budget 8000` | about 7.9k tokens, 15 files, the rest listed as left out |
+| `contexta flask --budget 20000 --focus "session cookie signing"` | 8.4k tokens, 0.6 s warm. Repomix and Gitingest dump 229k to 402k tokens |
+| `contexta fastapi --budget 20000 --focus "dependency injection solving"` | 17.7k tokens in 1.4 s warm (3.6 s with `--no-graph`). The same repo is 4.4M to 8.9M tokens as a full dump |
+| Files needed for the task, found in the packs that fit 128k | Contexta 3/4, 4/4, 2/5. Repomix `--compress --include <package>` 3/4, 2/4, 2/5 |
+
+It loses on raw speed (the unbudgeted FastAPI pack takes 9 s, Repomix 1.3 s), an unbudgeted pack is
+still 168k tokens on Flask, and focus matching is by keyword, so it misses `class Depends` for "dependency injection". The [full table](benchmarks/README.md) shows all of it.
 
 **Three ways to use it:**
 
 | Mode | Command | What it does |
 |---|---|---|
 | **MCP Server** | `contexta serve --root ~/code` | Tool server for Claude Code, Cursor and Windsurf. Reads only inside `--root` |
+| **GitHub Action** | `uses: pablokaua03/contexta@main` | PR context (diff, impacted tests, redacted, within budget) as an artifact and a comment. [Docs](docs/github-action.md) |
 | **CLI** | `contexta ./project --pack onboarding --budget 20000` | Writes a context pack |
 | **GUI** | `contexta` | Desktop app with a live preview |
 
@@ -103,11 +107,27 @@ The server reads only inside the folders you pass with `--root` (repeat the flag
 | `scan_project` | Quick fingerprint — type, language, frameworks, deps, entry points |
 | `get_architecture` | Module relationships, folder structure, risks, key patterns |
 | `generate_context` | Full AI-optimized context pack with all preset options |
-| `find_files` | Search files by name, extension, or keyword |
+| `find_files` | Search files by name, extension, keyword, or file content and symbol names |
+| `repo_map` | Ranked map of the important files and symbols in a small token budget (`budget`, `focus`) |
+| `search_symbols` | Find a class, function or method by name |
+| `impacted_tests` | Which tests to run for a change, and what else it reaches |
+| `graph_query` | Dependents, dependencies, impact, changed-since, hot files from the [project graph](docs/graph.md) |
+| `context_for` | A pack for a `task` within a `budget`: the files ranked for it plus the tests that cover them |
 | `read_files` | Read specific file contents |
 | `list_packs` | List available pack presets |
 | `cache_status` | Show cache hit/miss statistics |
 | `refresh_cache` | Force-refresh cached analysis |
+
+### Agent setup in one command
+
+```bash
+contexta install cursor      # .cursor/rules/contexta.mdc
+contexta install claude      # a managed block in CLAUDE.md
+contexta install copilot     # a managed block in .github/copilot-instructions.md
+contexta install mcp         # .mcp.json (--client cursor|vscode for the other editors)
+```
+
+Safe to run twice: identical content is left alone, existing files are never overwritten without `--force`, and a file that already has other content only gets the Contexta block appended. `--dry-run` shows what would change.
 
 ### Smart cache
 
@@ -124,6 +144,13 @@ pip install contexta-ai
 # or, for a clean isolated CLI:
 pipx install contexta-ai
 contexta --help
+```
+
+Optional extras:
+
+```bash
+pip install "contexta-ai[syntax]"  # tree-sitter symbol maps for JS/TS/Go/Rust (a regex fallback is used without it)
+pip install "contexta-ai[gui]"     # the same, for desktop users. Tk itself comes with Python (apt install python3-tk)
 ```
 
 Optional AI API integrations:
@@ -157,7 +184,12 @@ python contexta.py
 ```bash
 # Generate context packs
 contexta .                                                   # default pack, or contexta.toml
-contexta . --pack onboarding --copy                         # understand a repo, then paste it
+contexta . --for onboard --copy                              # understand a repo, then paste it
+contexta . --for review --stdout                             # this branch against main, with impacted tests
+contexta . --for bugfix --focus "login timeout" --budget 20000
+contexta graph impact src/app.py                             # what a change touches, and which tests to run
+contexta install cursor                                      # agent rules for this project
+contexta . --pack onboarding --copy                         # same as --for onboard
 contexta . --pack bugfix --focus "login timeout"            # fix a bug with a coding agent
 contexta . --pack pr_review --base main --stdout            # review this branch against main
 contexta . --pack refactor --format json -o pack.json       # hand a refactor pack to another tool
@@ -181,6 +213,8 @@ contexta --configure-ai
 
 | Flag | Description |
 |---|---|
+| `--for` | `bugfix`, `review` (against main), `onboard` or `refactor`. Picks the pack for you |
+| `--no-graph` | Do not read or write `.contexta/graph.db` (also `graph = false` in `contexta.toml`) |
 | `--pack` | Preset: `custom`, `chatgpt`, `onboarding`, `pr_review`, `risk_review`, `debug`, `bugfix`, `backend`, `frontend`, `changes_related`, `refactor`, `raw_files` |
 | `--mode` | Context mode: `full`, `debug`, `feature`, `diff`, `onboarding`, `refactor` |
 | `--compression` | `full`, `balanced`, `focused`, `signatures`, `lean` |
@@ -221,6 +255,20 @@ Set `max_tokens` in `contexta.toml`, or pass `--budget`, and Contexta ranks the 
 Before the pack is written, likely secrets are replaced with `[REDACTED]`: API keys, private keys, known token prefixes, bearer tokens, passwords in URLs, `password: ...` lines in JSON and YAML, and random-looking strings under secret-like names. Placeholders such as `your-api-key` are kept. Run `--dry-run` to see what would change. To keep a value, list it in `redact_allow` in `contexta.toml`, or put `contexta:allow` on its line. Files such as `.env`, private keys, `.npmrc` and `.netrc` are never read at all. This is best-effort and does not replace keeping secrets out of the tree. `--no-redact` disables redaction.
 
 `contexta --init` writes a starter `contexta.toml` and `.contextaignore`. `.gitignore` is always applied. `.contextaignore` and the config `ignore` list add pack-only exclusions, using gitignore syntax, without changing what git tracks. A sample project file lives at [`docs/contexta.toml.example`](docs/contexta.toml.example).
+
+---
+
+## Project graph
+
+Contexta keeps a local SQLite index of files, symbols, tests and how they connect (imports, calls, tests, git co-change) in `.contexta/graph.db`. It updates incrementally while it reads your project and answers questions the files alone cannot: who uses this function, what does this change reach, which tests should I run, which files change the most.
+
+```bash
+contexta graph impact src/app/session.py     # impacted files, plus tests to run
+contexta graph map --budget 1500             # ranked repo map in about 1.5k tokens
+contexta graph export -o graph.json          # JSON, JSONL or Markdown for other tools
+```
+
+Packs use it: with `--budget`, files the project depends on most are kept first, and on repos over 800 files a budgeted or focused run analyses the highest-ranked files instead of all of them. It never stores file contents, credential files or authors, and it is gitignored by default. Details in [docs/graph.md](docs/graph.md).
 
 ---
 
@@ -305,7 +353,7 @@ python -m pytest tests/ -k "not test_relation_score"
 
 ## Security and behavior
 
-- Read-only: Contexta does not modify the scanned project
+- Read-only, with one exception: Contexta never modifies your files. It does keep its project graph in `.contexta/` (names, signatures and relations, never file contents; it ignores itself with a `*` `.gitignore`). Turn it off with `--no-graph` or `graph = false`, move it with `CONTEXTA_GRAPH_DIR`
 - No runtime telemetry or network requirement (except optional `--ask` AI calls)
 - Scan limit of 2000 files by default, raised with `--max-files`
 - Embedded binary/blob payloads are suppressed automatically

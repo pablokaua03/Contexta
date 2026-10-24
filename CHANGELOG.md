@@ -6,6 +6,33 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [2.2.0] - 2026-10-24
+
+Contexta now remembers your project. A local graph of files, symbols, tests and git history answers
+"what does this change touch" and makes budgeted packs faster and better aimed.
+
+### Added
+- **Project graph** (`.contexta/graph.db`, SQLite, gitignored by default). Files, symbols and tests, with `imports`, `calls`, `tests` and git `cochange` edges. Updated incrementally by mtime and hash. Never stores file contents, credential files or authors, and signatures are redacted. `contexta graph update|status|clear|dependents|dependencies|impact|changed|hot|symbols|map|export`. Export as JSON (`contexta.graph.v1`), JSONL or Markdown. See [docs/graph.md](docs/graph.md)
+- **Graph-aware packs.** With `--budget`, graph rank and churn raise a file's priority. With `--focus`, the tests that cover the matching files come along. On repos over 800 files, a budgeted or focused run analyses the 400 highest-ranked source files plus their tests instead of all of them: FastAPI at `--budget 20000` takes 1.4 s warm instead of 3.6 s. `--no-graph` or `graph = false` turns it off, `CONTEXTA_GRAPH_DIR` moves it
+- **MCP v2 tools:** `repo_map`, `search_symbols`, `impacted_tests`, `graph_query` and `context_for(task, budget)`. `find_files` also searches file contents and symbol names, with redacted matches. All confined to the server roots
+- **Repo map.** A ranked map of files and symbols inside a token budget. Python uses `ast`; JavaScript, TypeScript, Go and Rust use tree-sitter when installed, with a regex fallback
+- **`contexta install cursor|claude|copilot|mcp`** writes agent rules or MCP config. Idempotent, merge-safe for existing JSON, never overwrites without `--force`, `--dry-run`
+- **`--for bugfix|review|onboard|refactor`** picks the pack. `review` compares against `origin/main`, `main`, `origin/master` or `master`, whichever exists. `--help` is regrouped, with a short usage line and examples
+- **GitHub Action** (`action.yml`): PR context with the diff, impacted tests and a redacted pack inside a token budget, as an artifact and an optional comment that updates in place. See [docs/github-action.md](docs/github-action.md)
+- **Benchmark** against Repomix and Gitingest on Flask, Requests and FastAPI: tokens, time and recall, with the places Contexta loses. `python benchmarks/bench.py`
+
+### Changed
+- `tree-sitter` is now optional: `pip install "contexta-ai[syntax]"`. Without it, non-Python languages use a regex scanner. The `gui` extra installs the same parsers (Tk ships with Python and cannot come from pip). `contexta` without Tk now explains how to install it instead of failing with a traceback
+- **Engine split.** `context_engine.py` (about 5,000 lines) is now `contexta_app/engine/`, 16 cohesive modules, and a facade that keeps every public name. Output is byte-identical
+- When the file cap is hit, application code is scanned first, then tests, then `docs` and `examples`. On FastAPI the 2,000-file cap used to cut off the `fastapi/` package and pack `docs_src` instead
+- When a file has more definitions than fit in a pack, the signature list keeps focus matches, then classes, then top-level functions, instead of the first 18 in file order. Focus stemming also matches `dependency` with `dependencies`
+- Contexta writes `.contexta/` in the project (it ignores itself) unless `--no-graph` or `graph = false` is set. It still never modifies your files
+
+### Fixed
+- "Scanning directory: assets/assets" repeated the folder name in the scan log
+- The pack date used a fixed Brazilian format. It is ISO now (`2026-10-24 15:29:18`)
+- The file-limit warning was printed once per folder on the way back up. It prints once
+
 ## [2.1.0] - 2026-10-24
 
 This is a security and quality release. If you run the 2.0.0 MCP server, upgrade.
