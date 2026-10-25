@@ -36,6 +36,7 @@ class FileInsight:
     functions: list[str] = field(default_factory=list)
     classes: list[str] = field(default_factory=list)
     imports: list[str] = field(default_factory=list)
+    imported_names: list[str] = field(default_factory=list)  # Python: names from `from x import name`
     local_imports: list[str] = field(default_factory=list)
     external_imports: list[str] = field(default_factory=list)
     tags: set[str] = field(default_factory=set)

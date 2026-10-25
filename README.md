@@ -11,7 +11,7 @@ Contexta reads a codebase, keeps the files that matter for the task, fits them i
 [![Python](https://img.shields.io/badge/python-3.11%2B-12211c?style=flat-square)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-12211c?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-12211c?style=flat-square)]()
-[![Version](https://img.shields.io/badge/version-2.2.0-12211c?style=flat-square)]()
+[![Version](https://img.shields.io/badge/version-2.2.1-12211c?style=flat-square)]()
 [![MCP](https://img.shields.io/badge/MCP-compatible-12211c?style=flat-square)]()
 
 <br>
@@ -382,7 +382,7 @@ python -m pytest tests/ -k "not test_relation_score"
 ## Security and behavior
 
 - Read-only, with one exception: Contexta never modifies your files. It does keep its project graph in `.contexta/` (names, signatures and relations, never file contents; it ignores itself with a `*` `.gitignore`). Turn it off with `--no-graph` or `graph = false`, move it with `CONTEXTA_GRAPH_DIR`
-- No runtime telemetry or network requirement (except optional `--ask` AI calls)
+- No telemetry. Packs, the graph and the MCP server work offline. The only network use: the first token count downloads the `cl100k_base` encoding once (cached by `tiktoken`; offline, Contexta falls back to a character-based estimate), the optional `--ask` calls go to the AI provider you configured, and the GitHub Action posts its PR comment to the GitHub API
 - Scan limit of 2000 files by default, raised with `--max-files`
 - Embedded binary/blob payloads are suppressed automatically
 - Likely secrets are redacted in exports and in MCP `read_files` unless `--no-redact` is set. `--dry-run` shows what would be redacted

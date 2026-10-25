@@ -32,7 +32,7 @@ def compute_focus_raw(item: FileInsight, query: str) -> float:
     score = 0.0
     rel = item.relpath.as_posix().lower()
     stem = item.path.stem.lower()
-    imports_blob = " ".join(imported.lower() for imported in item.imports)
+    imports_blob = " ".join(imported.lower() for imported in (*item.imports, *item.imported_names))
     functions_blob = " ".join(func.lower() for func in item.functions)
     classes_blob = " ".join(cls.lower() for cls in item.classes)
     content_lower = item.content_lower

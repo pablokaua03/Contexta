@@ -103,6 +103,8 @@ def format_status(info: dict, name: str) -> str:
     lines.append("  edges: " + (", ".join(f"{k} {v}" for k, v in sorted(info["edges"].items())) or "none"))
     lines.append("  parsers: " + ", ".join(f"{k} {v}" for k, v in sorted(info["parsers"].items())))
     lines.append(f"  updated {info['updated_at']}   db {info['db']}")
+    if info.get("truncated"):
+        lines.append("  warning: the last update hit the file limit, so the graph is incomplete (raise CONTEXTA_GRAPH_MAX_FILES)")
     return "\n".join(lines) + "\n"
 
 

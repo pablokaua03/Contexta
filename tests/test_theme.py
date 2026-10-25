@@ -47,3 +47,14 @@ class TestThemeContrast(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestInteractiveBorders(unittest.TestCase):
+    def test_border_strong_clears_3_to_1_on_every_surface_a_control_sits_on(self):
+        for palette in (DARK, LIGHT):
+            for surface in ("card", "input", "bg"):
+                ratio = contrast_ratio(palette["border_strong"], palette[surface])
+                self.assertGreaterEqual(ratio, 3.0, f"{palette['mode']} border_strong on {surface} is {ratio:.2f}")
+
+    def test_both_palettes_define_the_same_keys(self):
+        self.assertEqual(set(DARK), set(LIGHT))

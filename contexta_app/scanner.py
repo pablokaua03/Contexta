@@ -561,6 +561,11 @@ def build_tree(
 
         if entry.is_symlink() and not _symlink_stays_inside(entry, project_root):
             continue
+        if entry.is_symlink() and entry.is_dir():
+            # A directory link that stays inside the project points at something scanned under its real
+            # path anyway. Following it only lists the same files twice (or forever for `self -> .`, until
+            # the file cap), and could walk a folder the ignore rules skip.
+            continue
 
         if entry.is_dir():
             if should_ignore_dir(entry.name, include_hidden):

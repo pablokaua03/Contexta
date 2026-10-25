@@ -99,6 +99,7 @@ class UpdateStats:
     seconds: float = 0.0
     git_commits: int = 0
     skipped_reason: str = ""
+    truncated: bool = False
 
     def to_dict(self) -> dict:
         return {k: (round(v, 3) if isinstance(v, float) else v) for k, v in self.__dict__.items()}
@@ -106,13 +107,29 @@ class UpdateStats:
     def summary(self) -> str:
         if self.skipped_reason:
             return f"Graph not updated: {self.skipped_reason}"
-        return (
+        text = (
             f"Graph: {self.total} file(s), {self.added} new, {self.changed} changed, {self.removed} removed, "
             f"{self.unchanged} unchanged, {self.symbols} symbols, {self.edges} edges ({self.seconds:.2f}s)"
         )
+        if self.truncated:
+            text += f"\nWarning: the project has more than {self.total} files; only the first {self.total} were indexed. Raise CONTEXTA_GRAPH_MAX_FILES to index the rest."
+        return text
 
 
 # ------------------------------------------------------------------ helpers
+
+
+DEFAULT_GRAPH_MAX_FILES = 50000
+
+
+def graph_max_files() -> int:
+    """File cap for the project graph: CONTEXTA_GRAPH_MAX_FILES, else 50000 (packs keep their own 2000 default)."""
+    raw = os.environ.get("CONTEXTA_GRAPH_MAX_FILES", "").strip()
+    try:
+        value = int(raw) if raw else 0
+    except ValueError:
+        value = 0
+    return value if value > 0 else DEFAULT_GRAPH_MAX_FILES
 
 
 def classify_kind(rel: str, lang: str | None) -> str:
@@ -350,6 +367,7 @@ class ProjectGraph:
         self._shared = explicit_db and self.db_path.parent != self.root / GRAPH_DIRNAME
         self.readonly = readonly
         self._con: sqlite3.Connection | None = None
+        self.truncated = False
 
     # connection
     @property
@@ -427,6 +445,7 @@ class ProjectGraph:
         started = time.perf_counter()
         stats = UpdateStats()
         self._claim()
+        self.truncated = False
         if files is None:
             files = self._scan()
         current: dict[str, Path] = {}
@@ -439,6 +458,7 @@ class ProjectGraph:
                 continue
             current[rel] = path
         stats.total = len(current)
+        stats.truncated = self.truncated
 
         con = self.con
         known = {r["path"]: r for r in con.execute("SELECT path, hash, mtime_ns, size FROM files")}
@@ -485,6 +505,7 @@ class ProjectGraph:
             if dirty or use_git:
                 self._compute_ranks()
             self._set_meta("updated_at", str(now))
+            self._set_meta("truncated", "1" if self.truncated else "0")
             con.commit()
         except Exception:
             con.rollback()
@@ -532,7 +553,11 @@ class ProjectGraph:
         from contexta_app.scanner import build_tree, load_gitignore_patterns
 
         patterns = load_gitignore_patterns(self.root)
-        tree = build_tree(self.root, False, False, lambda *_a, **_k: None, [0], patterns, self.root)
+        # The memory should cover the whole project, so it does not share the 2000-file cap of a pack.
+        limit = graph_max_files()
+        notes: list[str] = []
+        tree = build_tree(self.root, False, False, lambda msg, *_a, **_k: notes.append(str(msg)), [0], patterns, self.root, limit)
+        self.truncated = any("file limit" in n for n in notes)
         return flatten_tree(tree)
 
     def _delete_file(self, rel: str) -> None:
@@ -785,6 +810,7 @@ class ProjectGraph:
             "updated_at": _iso(float(self.meta("updated_at", "0") or 0)),
             "db": str(self.db_path.relative_to(self.root)) if self.db_path.is_relative_to(self.root) else "(outside project)",
             "parsers": {r[0] or "none": r[1] for r in con.execute("SELECT backend, COUNT(*) FROM files GROUP BY backend")},
+            "truncated": self.meta("truncated", "0") == "1",
         }
 
     def has_file(self, path: str) -> bool:

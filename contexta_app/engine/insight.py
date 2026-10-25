@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import re
+from functools import lru_cache
 from pathlib import Path
 from contexta_app.scanner import get_language, read_file_safe
 from contexta_app.syntax import extract_symbols_with_treesitter
@@ -22,6 +24,7 @@ def make_file_insight(project_path: Path, path: Path) -> FileInsight:
     content, truncated, total_line_count = read_file_safe(path)
     lang = get_language(path)
     functions, classes, imports = extract_symbols(content, lang)
+    imported_names = python_imported_names(content) if lang == "python" else []
     external_imports = [item for item in imports if not item.startswith(".")]
     return FileInsight(
         path=path,
@@ -34,10 +37,46 @@ def make_file_insight(project_path: Path, path: Path) -> FileInsight:
         functions=functions,
         classes=classes,
         imports=imports,
+        imported_names=imported_names,
         external_imports=external_imports,
     )
 
+@lru_cache(maxsize=64)
+def _python_ast_symbols(content: str) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None:
+    """Top-level functions and classes, imported modules and imported names, from ``ast``.
+
+    Python is read with the standard library whether or not tree-sitter is installed, so a pack
+    does not depend on an optional package. Modules are written the way ``resolve_local_import``
+    expects them: ``pkg.core``, or leading dots for a relative import (``.util``).
+    """
+    try:
+        tree = ast.parse(content)
+    except (SyntaxError, ValueError, RecursionError):
+        return None
+    functions = [n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    classes = [n.name for n in tree.body if isinstance(n, ast.ClassDef)]
+    modules: list[str] = []
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            modules.append("." * (node.level or 0) + (node.module or ""))
+            names.extend(alias.name for alias in node.names if alias.name != "*")
+    unique = lambda values, limit: tuple(dict.fromkeys(values))[:limit]  # noqa: E731
+    return unique(functions, 12), unique(classes, 8), unique(modules, 24), unique(names, 40)
+
+def python_imported_names(content: str) -> list[str]:
+    """Names brought in with ``from x import name``, for focus matching ("slugify" finds its callers)."""
+    parsed = _python_ast_symbols(content)
+    return list(parsed[3]) if parsed else []
+
 def extract_symbols(content: str, lang: str | None) -> tuple[list[str], list[str], list[str]]:
+    if lang == "python":
+        parsed = _python_ast_symbols(content)
+        if parsed:
+            return list(parsed[0]), list(parsed[1]), list(parsed[2])
+
     syntax_symbols = extract_symbols_with_treesitter(content, lang)
     if syntax_symbols:
         functions, classes, imports = syntax_symbols

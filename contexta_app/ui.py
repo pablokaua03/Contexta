@@ -14,7 +14,7 @@ import threading
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from contexta_app.context_engine import (
     AI_PROFILE_OPTIONS,
@@ -445,7 +445,7 @@ class FlatBtn(tk.Frame):
             return C["card2"], C["text3"], C["border"]
         if self._variant == "ghost":
             bg = C["card2"] if self._hover else C[self._surface_key]
-            return bg, C["text"], C["border"]
+            return bg, C["text"], C["border_strong"]
         if self._variant == "soft":
             bg = C["accent"] if self._hover else C["tag_bg"]
             fg = readable_fg(bg) if self._hover else C["tag_fg"]
@@ -591,7 +591,7 @@ class Toggle(tk.Frame):
     def _draw(self):
         self._canvas.delete("all")
         radius = self.HEIGHT // 2
-        track = C["accent"] if self._var.get() and self._enabled else C["border2"]
+        track = C["accent"] if self._var.get() and self._enabled else C["border_strong"]
         if not self._enabled:
             track = C["border"]
         self._canvas.create_oval(0, 0, self.HEIGHT, self.HEIGHT, fill=track, outline=track)
@@ -784,6 +784,23 @@ def memory_hint(choice: "mem.MemoryChoice") -> str:
     return MEMORY_HINTS["save"] if choice.save else MEMORY_HINTS["read_only"]
 
 
+def parse_token_budget(text: str) -> tuple[int | None, str]:
+    """``(budget, problem)`` from the Token budget box: empty means no limit, ``32k`` and ``8,000`` are accepted."""
+    raw = text.strip().lower().replace(",", "").replace("_", "").replace(" ", "")
+    if not raw:
+        return None, ""
+    scale = 1
+    if raw.endswith("k"):
+        raw, scale = raw[:-1], 1000
+    try:
+        value = int(float(raw) * scale) if raw.replace(".", "", 1).isdigit() else int(raw) * scale
+    except ValueError:
+        return None, "Token budget must be a number such as 8000 or 32k, or empty for no limit."
+    if value < 500:
+        return None, "Token budget is too small to hold a useful pack (minimum 500)."
+    return value, ""
+
+
 class App(tk.Tk):
     def __init__(self):
         _set_windows_app_id()
@@ -844,6 +861,7 @@ class App(tk.Tk):
         self._preview_snapshot: dict[str, int] | None = None
         self._path_var = tk.StringVar()
         self._focus_var = tk.StringVar()
+        self._budget_var = tk.StringVar()
         self._pack_var = tk.StringVar(value="onboarding")
         self._mode_var = tk.StringVar(value="onboarding")
         self._ai_var = tk.StringVar(value="generic")
@@ -890,7 +908,7 @@ class App(tk.Tk):
             fieldbackground=C["input"],
             background=C["card"],
             foreground=C["text"],
-            bordercolor=C["border"],
+            bordercolor=C["border_strong"],
             arrowcolor=C["text2"],
             lightcolor=C["input"],
             darkcolor=C["input"],
@@ -1058,7 +1076,7 @@ class App(tk.Tk):
             bg=C["input"],
             fg=C["text"],
             insertbackground=C["accent"],
-            relief="flat",
+            relief="flat", highlightthickness=0,
             bd=0,
             selectbackground=C["accent"],
             selectforeground=readable_fg(C["accent"]),
@@ -1086,6 +1104,7 @@ class App(tk.Tk):
         self._combo_field(output_inner, "AI target", self._ai_var, AI_PROFILE_OPTIONS).pack(fill="x", pady=(14, 0))
         self._combo_field(output_inner, "Task", self._task_var, TASK_PROFILE_OPTIONS).pack(fill="x", pady=(12, 0))
         self._combo_field(output_inner, "Compression", self._compression_var, COMPRESSION_OPTIONS).pack(fill="x", pady=(12, 0))
+        self._entry_field(output_inner, "Token budget", self._budget_var, "Optional. Cuts the pack to fit, for example 8000, 32k or 128000. Empty means no limit.").pack(fill="x", pady=(12, 0))
 
         goal_label = tk.Label(output_inner, text="Custom goal", font=FT, bg=C["card"], fg=C["text3"])
         goal_label.pack(anchor="w", pady=(14, 6))
@@ -1099,7 +1118,7 @@ class App(tk.Tk):
             bg=C["input"],
             fg=C["text"],
             insertbackground=C["accent"],
-            relief="flat",
+            relief="flat", highlightthickness=0,
             bd=0,
             padx=10,
             pady=8,
@@ -1119,7 +1138,6 @@ class App(tk.Tk):
         toggles = tk.Frame(options_inner, bg=C["card"])
         toggles.pack(fill="x", pady=(12, 0))
         toggles.grid_columnconfigure(0, weight=1)
-        toggles.grid_columnconfigure(1, weight=1)
         reg(toggles, lambda w: w.configure(bg=C["card"]))
         toggle_specs = (
             ("_toggle_hidden", "Hidden files", self._hidden_var),
@@ -1131,7 +1149,8 @@ class App(tk.Tk):
         for index, (attr, label, variable) in enumerate(toggle_specs):
             toggle = Toggle(toggles, label, variable)
             setattr(self, attr, toggle)
-            toggle.grid(row=index // 2, column=index % 2, sticky="w", pady=5, padx=(0, 8))
+            # One column: two columns clipped the longer labels ("Unknown extensions", "Staged changes only").
+            toggle.grid(row=index, column=0, sticky="w", pady=5)
 
         # Room for options added elsewhere (budgets, redaction, presets).
         self.extension_slot = tk.Frame(left, bg=C["bg"])
@@ -1214,7 +1233,7 @@ class App(tk.Tk):
         folder_shell.pack(side="left", fill="x", expand=True)
         folder_entry = tk.Entry(
             folder_shell, textvariable=self._mem_folder_var, font=FM, bg=C["input"], fg=C["text"], insertbackground=C["accent"],
-            relief="flat", bd=0, selectbackground=C["accent"], selectforeground=readable_fg(C["accent"]),
+            relief="flat", highlightthickness=0, bd=0, selectbackground=C["accent"], selectforeground=readable_fg(C["accent"]),
         )
         folder_entry.pack(fill="x", padx=10, ipady=6)
         reg(folder_entry, lambda w: w.configure(bg=C["input"], fg=C["text"], insertbackground=C["accent"], selectbackground=C["accent"], selectforeground=readable_fg(C["accent"])))
@@ -1409,7 +1428,7 @@ class App(tk.Tk):
         var = tk.StringVar()
         shell = self._input_shell(body)
         shell.pack(fill="x")
-        entry = tk.Entry(shell, textvariable=var, font=FM, width=44, bg=C["input"], fg=C["text"], insertbackground=C["accent"], relief="flat", bd=0)
+        entry = tk.Entry(shell, textvariable=var, font=FM, width=44, bg=C["input"], fg=C["text"], insertbackground=C["accent"], relief="flat", highlightthickness=0, bd=0)
         entry.pack(fill="x", padx=10, ipady=7)
         self._bind_input_focus(entry, shell)
 
@@ -1450,7 +1469,7 @@ class App(tk.Tk):
         self._memory_offer.grid(row=0, column=1, padx=(0, 12))
         self._memory_offer.grid_remove()
         self._memory_text = tk.Text(
-            self._memory_shell, font=FM, bg=C["bg2"], fg=C["text"], relief="flat", bd=0, padx=14, pady=8,
+            self._memory_shell, font=FM, bg=C["bg2"], fg=C["text"], relief="flat", highlightthickness=0, bd=0, padx=14, pady=8,
             wrap="word", state="disabled", cursor="arrow",
         )
         self._memory_text.grid(row=1, column=0, sticky="nsew")
@@ -1576,7 +1595,7 @@ class App(tk.Tk):
             bg=C["bg2"],
             fg=C["text"],
             insertbackground=C["accent"],
-            relief="flat",
+            relief="flat", highlightthickness=0,
             bd=0,
             padx=14,
             pady=12,
@@ -1608,7 +1627,7 @@ class App(tk.Tk):
             font=FS,
             bg=C["bg2"],
             fg=C["text"],
-            relief="flat",
+            relief="flat", highlightthickness=0,
             bd=0,
             padx=14,
             pady=8,
@@ -1639,7 +1658,7 @@ class App(tk.Tk):
         log_shell.grid_columnconfigure(0, weight=1)
         log_shell.grid_rowconfigure(0, weight=1)
         reg(log_shell, lambda w: w.configure(bg=C["bg2"], highlightbackground=C["border"]))
-        self._log = tk.Text(log_shell, height=6, font=FM, bg=C["bg2"], fg=C["text2"], insertbackground=C["accent"], relief="flat", bd=0, padx=12, pady=8, wrap="word", state="disabled", cursor="arrow")
+        self._log = tk.Text(log_shell, height=6, font=FM, bg=C["bg2"], fg=C["text2"], insertbackground=C["accent"], relief="flat", highlightthickness=0, bd=0, padx=12, pady=8, wrap="word", state="disabled", cursor="arrow")
         self._log.grid(row=0, column=0, sticky="nsew")
         reg(self._log, lambda w: w.configure(bg=C["bg2"], fg=C["text2"], insertbackground=C["accent"]))
         scrollbar = ttk.Scrollbar(log_shell, orient="vertical", command=self._log.yview)
@@ -1708,8 +1727,8 @@ class App(tk.Tk):
         return row
 
     def _input_shell(self, parent):
-        shell = tk.Frame(parent, bg=C["input"], highlightthickness=1, highlightbackground=C["border"], highlightcolor=C["accent"], bd=0)
-        reg(shell, lambda w: w.configure(bg=C["input"], highlightbackground=C["border"], highlightcolor=C["accent"]))
+        shell = tk.Frame(parent, bg=C["input"], highlightthickness=1, highlightbackground=C["border_strong"], highlightcolor=C["accent"], bd=0)
+        reg(shell, lambda w: w.configure(bg=C["input"], highlightbackground=C["border_strong"], highlightcolor=C["accent"]))
         return shell
 
     def _bind_input_focus(self, widget, shell):
@@ -1717,7 +1736,7 @@ class App(tk.Tk):
             shell.configure(highlightbackground=C["accent"])
 
         def on_out(_event):
-            shell.configure(highlightbackground=C["border"])
+            shell.configure(highlightbackground=C["border_strong"])
 
         widget.bind("<FocusIn>", on_in, add="+")
         widget.bind("<FocusOut>", on_out, add="+")
@@ -1756,7 +1775,7 @@ class App(tk.Tk):
             bg=C["input"],
             fg=C["text"],
             insertbackground=C["accent"],
-            relief="flat",
+            relief="flat", highlightthickness=0,
             bd=0,
             selectbackground=C["accent"],
             selectforeground=readable_fg(C["accent"]),
@@ -1766,6 +1785,7 @@ class App(tk.Tk):
         self._bind_input_focus(entry, shell)
         helper = tk.Label(frame, text=hint, font=FT, bg=C["card"], fg=C["text3"], wraplength=420, justify="left")
         helper.pack(anchor="w", pady=(6, 0))
+        frame.bind("<Configure>", lambda e, h=helper: h.configure(wraplength=max(e.width - 8, 160)), add="+")
         reg(helper, lambda w: w.configure(bg=C["card"], fg=C["text3"]))
         if helper_text:
             explainer = tk.Label(frame, text=helper_text, font=FT, bg=C["card"], fg=C["text3"], wraplength=420, justify="left")
@@ -2110,6 +2130,10 @@ class App(tk.Tk):
     def _start(self):
         if self._running or self._mem_busy or not self._project_path:
             return
+        budget, budget_problem = parse_token_budget(self._budget_var.get())
+        if budget_problem:
+            self._show_banner(budget_problem, "warn")
+            return
         self._run_plan = mem.plan_for(self._project_path, self._memory_choice())
         # Read every control here, on the UI thread. The worker never touches a widget.
         self._run_args = dict(
@@ -2124,6 +2148,7 @@ class App(tk.Tk):
             compression=self._compression_var.get(),
             pack_profile=self._pack_var.get(),
             focus_query=self._focus_var.get().strip(),
+            token_budget=budget,
         )
         self._running = True
         self._hide_banner()
@@ -2273,7 +2298,7 @@ class App(tk.Tk):
         text_shell.grid_rowconfigure(0, weight=1)
         reg(text_shell, lambda w: w.configure(bg=C["card"], highlightbackground=C["border"]))
 
-        guide = tk.Text(text_shell, font=FS, bg=C["card"], fg=C["text2"], relief="flat", bd=0, wrap="word", padx=18, pady=16, spacing3=2)
+        guide = tk.Text(text_shell, font=FS, bg=C["card"], fg=C["text2"], relief="flat", highlightthickness=0, bd=0, wrap="word", padx=18, pady=16, spacing3=2)
         guide.grid(row=0, column=0, sticky="nsew")
         guide.configure(insertbackground=C["accent"])
         guide.tag_configure("h", font=FL, foreground=C["text"], spacing1=12, spacing3=4)
@@ -2311,24 +2336,34 @@ class App(tk.Tk):
         close_btn.pack(anchor="e")
 
     def _get_mcp_entry(self) -> dict:
+        if getattr(sys, "frozen", False):
+            # The packaged app has no contexta_mcp.py next to it: the executable itself serves MCP.
+            return {"command": sys.executable.replace("\\", "/"), "args": ["serve"]}
         mcp_script = Path(__file__).resolve().parent.parent / "contexta_mcp.py"
-        python_cmd = sys.executable
-        return {
-            "command": python_cmd.replace("\\", "/"),
-            "args": [str(mcp_script).replace("\\", "/")],
-        }
+        if mcp_script.exists():
+            args = [str(mcp_script).replace("\\", "/")]
+        else:  # installed from the wheel: there is no loose script, the package runs as a module
+            args = ["-m", "contexta_app", "serve"]
+        return {"command": sys.executable.replace("\\", "/"), "args": args}
 
     def _write_mcp_config(self, config_path: Path, editor_name: str):
         import json
+        import shutil
 
         config_path.parent.mkdir(parents=True, exist_ok=True)
         existing = {}
         if config_path.exists():
             try:
                 existing = json.loads(config_path.read_text(encoding="utf-8"))
+                if not isinstance(existing, dict):
+                    raise ValueError("not a JSON object")
             except Exception:
-                pass
-        if "mcpServers" not in existing:
+                # Keep what the user had instead of silently replacing it.
+                backup = config_path.with_name(config_path.name + ".bak")
+                shutil.copy2(config_path, backup)
+                self._log_write(f"Could not read {config_path.name}; saved a copy as {backup.name}", "warn")
+                existing = {}
+        if not isinstance(existing.get("mcpServers"), dict):
             existing["mcpServers"] = {}
         existing["mcpServers"]["contexta"] = self._get_mcp_entry()
         config_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")

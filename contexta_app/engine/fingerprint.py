@@ -326,11 +326,9 @@ def infer_probable_purpose(project_type_label: str | None, domain_label: str | N
         ("Electron desktop application", "image_editing"): "Provide desktop image or asset-editing workflows through a web-powered desktop shell.",
         ("Go application", "task_management"): "Provide Go-based services or tooling for task, board, and workflow management operations.",
         ("Rust application", "graph_analysis"): "Analyze, transform, or serve graph and network data with performance-oriented Rust modules.",
-        ("Desktop GUI + CLI developer tool", "developer_tooling"): "Scan local repositories and generate curated context packs for AI workflows.",
+        ("Desktop GUI + CLI developer tool", "developer_tooling"): "Provide developer tooling, automation, or repository-analysis workflows through a desktop GUI and a command-line entry point.",
         ("Desktop GUI + CLI developer tool", "image_editing"): "Provide desktop editing workflows for image or asset manipulation through GUI and command-driven tooling.",
     }
-    if project_type_label == "Desktop GUI + CLI developer tool":
-        return "Scan local repositories and generate curated context packs for AI workflows."
     if (project_type_label, domain_label) in purpose_by_pair:
         return purpose_by_pair[(project_type_label, domain_label)]
 
@@ -418,6 +416,8 @@ def infer_probable_purpose(project_type_label: str | None, domain_label: str | N
         return "Build JVM-based application logic using Scala and functional or object-oriented patterns."
     if project_type_label == "PHP application":
         return "Deliver web application functionality using PHP modules and associated server-side tooling."
+    if project_type_label == "Desktop GUI + CLI developer tool":
+        return "Provide a desktop application with a graphical interface and a command-line entry point."
     if project_type_label == "Python application":
         return "Organize Python modules, scripts, and supporting logic into a runnable application."
     if project_type_label == "JavaScript/TypeScript application":

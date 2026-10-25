@@ -8,6 +8,7 @@ Thank you for considering a contribution!
 - Optional packaging tools such as **Nuitka** or **PyInstaller** must stay out of runtime code paths
 - Python **3.10+** syntax is acceptable
 - Every PR must keep the project runnable with `python contexta.py` after `python -m pip install -r requirements.txt`
+- Tests: `python -m pip install -e . -r requirements-dev.txt`, then `python -m pytest -q` (on Linux add `xvfb-run -a` for the GUI tests; the tests that need Pillow or PyYAML skip when those are missing)
 
 ## How to contribute
 

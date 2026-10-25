@@ -124,10 +124,12 @@ from contexta_app.engine.relations import (  # noqa: F401
     test_relation_score,
 )
 from contexta_app.engine.insight import (  # noqa: F401
+    _python_ast_symbols,
     collect_file_signals,
     extract_symbols,
     flatten_tree,
     make_file_insight,
+    python_imported_names,
 )
 from contexta_app.engine.roles import (  # noqa: F401
     _CONTEXTA_MODULE_ROLES,
